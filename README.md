@@ -1,6 +1,6 @@
 # Dot Lab
 
-[![CI](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml)
+[![CI](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml) [![Kaggle notebook](https://img.shields.io/badge/Kaggle-walkthrough%20notebook-20BEFF?logo=kaggle&logoColor=white)](https://www.kaggle.com/code/anju004/dot-lab-always-on-ai-agent-walkthrough)
 
 An experimental always-on AI agent that plans, uses tools, maintains memory, executes multi-step tasks, and requests human approval when needed.
 
@@ -178,6 +178,10 @@ SEARCH_API_KEY=...
 | `DOT_LAB_API_KEY` | If set, `/api/*` (except `/api/health`) requires header `X-API-Key`. |
 
 See `.env.example` for every option.
+
+## Try it on Kaggle
+
+A step-by-step [walkthrough notebook on Kaggle](https://www.kaggle.com/code/anju004/dot-lab-always-on-ai-agent-walkthrough) installs Dot Lab, runs the test suite and shows one full agent run (plan → tools → approval pause → resume → result) without needing an API key.
 
 ## Running locally
 
