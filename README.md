@@ -1,5 +1,7 @@
 # Dot Lab
 
+[![CI](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml)
+
 An experimental always-on AI agent that plans, uses tools, maintains memory, executes multi-step tasks, and requests human approval when needed.
 
 > **This project is not affiliated with, endorsed by, or an implementation of OpenAI Dots.**
@@ -124,6 +126,7 @@ dot-lab/
 ├── dashboard/               # index.html, styles.css, app.js
 ├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py
 ├── tests/                   # offline pytest suite with a scripted fake LLM
+├── .github/workflows/ci.yml # lint + tests on every push
 ├── data/                    # SQLite DB + agent workspace (git-ignored)
 ├── .env.example  Dockerfile  docker-compose.yml  pyproject.toml  requirements.txt
 └── README.md  SECURITY.md  CONTRIBUTING.md  LICENSE
@@ -134,7 +137,7 @@ Additions to the suggested layout, and why: `app/context.py` (single place that 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-user>/dot-lab.git
+git clone https://github.com/Anjub004/dot-lab.git
 cd dot-lab
 python3.12 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
