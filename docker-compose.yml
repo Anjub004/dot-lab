@@ -1,0 +1,16 @@
+services:
+  dot-lab:
+    build: .
+    image: dot-lab:latest
+    ports:
+      # Bound to localhost only. Set DOT_LAB_API_KEY before exposing it further.
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: sqlite:////app/data/dot_lab.db
+      WORKSPACE_DIR: /app/data/workspace
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
