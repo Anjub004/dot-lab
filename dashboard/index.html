@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dot Lab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <div>
+        <h1>Dot Lab</h1>
+        <p class="tagline">Experimental always-on agent · independent project, not affiliated with OpenAI</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="llm-status" class="pill">checking…</span>
+      <details class="apikey">
+        <summary>API key</summary>
+        <label>X-API-Key (only if DOT_LAB_API_KEY is set)
+          <input id="api-key" type="password" autocomplete="off" placeholder="optional">
+        </label>
+      </details>
+    </div>
+  </header>
+
+  <main>
+    <div id="error-banner" class="banner error" hidden></div>
+
+    <section class="cards" aria-label="Overview">
+      <div class="card"><span class="label">Active tasks</span><span id="ov-active" class="value">–</span></div>
+      <div class="card"><span class="label">Completed</span><span id="ov-completed" class="value">–</span></div>
+      <div class="card warn"><span class="label">Waiting approvals</span><span id="ov-approvals" class="value">–</span></div>
+      <div class="card bad"><span class="label">Failed</span><span id="ov-failed" class="value">–</span></div>
+      <div class="card"><span class="label">Monitoring jobs</span><span id="ov-monitors" class="value">–</span></div>
+    </section>
+
+    <section id="approvals-section" class="panel approvals" hidden>
+      <h2>Agent is waiting for your approval</h2>
+      <div id="approvals-list"></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>New task</h2>
+        <form id="task-form">
+          <textarea id="goal" rows="3" maxlength="5000" required
+            placeholder="e.g. Research the latest developments in AI agents and prepare a summary."></textarea>
+          <button type="submit">Start task</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>New monitor <span class="tag">experimental</span></h2>
+        <form id="monitor-form" class="monitor-form">
+          <input id="m-name" placeholder="Name, e.g. AI News Monitor" required maxlength="200">
+          <input id="m-goal" placeholder="Goal to re-run periodically" required maxlength="5000">
+          <div class="row">
+            <label>Every <input id="m-interval" type="number" min="1" value="360" required> minutes</label>
+            <button type="submit">Create monitor</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Tasks</h2>
+        <select id="status-filter" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option>PENDING</option><option>PLANNING</option><option>RUNNING</option>
+          <option>WAITING_APPROVAL</option><option>PAUSED</option><option>COMPLETED</option>
+          <option>FAILED</option><option>CANCELLED</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Task</th><th>Status</th><th>Current step</th><th>Progress</th><th>Created</th><th>Started</th><th>Last updated</th></tr>
+          </thead>
+          <tbody id="task-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Monitors</h2>
+        <div id="monitor-list" class="muted">No monitors yet.</div>
+      </section>
+      <section class="panel">
+        <h2>Notifications</h2>
+        <div id="notification-list" class="muted">No notifications.</div>
+      </section>
+    </div>
+  </main>
+
+  <div id="drawer" class="drawer" hidden>
+    <div class="drawer-backdrop" data-close></div>
+    <aside class="drawer-body" role="dialog" aria-modal="true" aria-labelledby="d-goal">
+      <div class="drawer-head">
+        <div>
+          <span id="d-status" class="status"></span>
+          <h2 id="d-goal"></h2>
+          <p id="d-meta" class="muted"></p>
+        </div>
+        <button class="ghost" data-close aria-label="Close">✕</button>
+      </div>
+      <div id="d-actions" class="actions"></div>
+      <div id="d-content"></div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

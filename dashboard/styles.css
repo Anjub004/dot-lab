@@ -1,0 +1,187 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1c2230;
+  --muted: #6b7385;
+  --border: #e3e6ec;
+  --accent: #4f46e5;
+  --accent-text: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #e8f6ed;
+  --warn: #b45309;
+  --warn-bg: #fdf3e2;
+  --bad: #b91c1c;
+  --bad-bg: #fdecec;
+  --info: #1d4ed8;
+  --info-bg: #e8effd;
+  --neutral-bg: #eef0f4;
+  --code-bg: #f2f3f6;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1218;
+    --surface: #171b23;
+    --text: #e6e8ee;
+    --muted: #9aa2b4;
+    --border: #2a303c;
+    --accent: #818cf8;
+    --accent-text: #0f1218;
+    --ok: #4ade80;
+    --ok-bg: #12291b;
+    --warn: #fbbf24;
+    --warn-bg: #2d2412;
+    --bad: #f87171;
+    --bad-bg: #2f1515;
+    --info: #93b4fd;
+    --info-bg: #16223b;
+    --neutral-bg: #222833;
+    --code-bg: #11151c;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+h1, h2, h3 { margin: 0; line-height: 1.25; }
+h1 { font-size: 18px; }
+h2 { font-size: 15px; margin-bottom: 12px; }
+h3 { font-size: 13px; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.brand { display: flex; gap: 12px; align-items: center; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+.tagline { margin: 0; font-size: 12px; color: var(--muted); }
+.topbar-right { display: flex; gap: 12px; align-items: center; }
+.apikey summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.apikey label { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; display: flex; flex-direction: column; gap: 16px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; display: flex; flex-direction: column; box-shadow: var(--shadow);
+}
+.card .label { font-size: 12px; color: var(--muted); }
+.card .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card.warn .value { color: var(--warn); }
+.card.bad .value { color: var(--bad); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; box-shadow: var(--shadow); min-width: 0;
+}
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.panel.approvals { border-color: var(--warn); background: var(--warn-bg); }
+
+form { display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+textarea, input, select {
+  width: 100%; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+}
+.row input[type=number] { width: 90px; display: inline-block; }
+select { width: auto; }
+textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+button {
+  font: inherit; font-weight: 600; cursor: pointer; border: 1px solid transparent;
+  background: var(--accent); color: var(--accent-text); padding: 8px 14px; border-radius: 8px;
+  align-self: flex-start;
+}
+button:disabled { opacity: .5; cursor: default; }
+button.ghost { background: transparent; color: var(--text); border-color: var(--border); }
+button.approve { background: var(--ok); color: #fff; }
+button.reject { background: var(--bad); color: #fff; }
+button.small { padding: 4px 10px; font-size: 12px; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--neutral-bg); }
+td.goal { max-width: 360px; }
+td.nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+
+.muted { color: var(--muted); }
+.tag { font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+
+.pill, .status {
+  display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  border-radius: 999px; padding: 2px 9px; background: var(--neutral-bg); color: var(--muted); white-space: nowrap;
+}
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+.status.RUNNING, .status.PLANNING, .status.PENDING { background: var(--info-bg); color: var(--info); }
+.status.WAITING_APPROVAL, .status.PAUSED { background: var(--warn-bg); color: var(--warn); }
+.status.COMPLETED, .status.APPROVED, .status.SUCCESS { background: var(--ok-bg); color: var(--ok); }
+.status.FAILED, .status.REJECTED, .status.ERROR { background: var(--bad-bg); color: var(--bad); }
+
+.progress { width: 90px; height: 6px; background: var(--neutral-bg); border-radius: 999px; overflow: hidden; margin-top: 4px; }
+.progress > span { display: block; height: 100%; background: var(--accent); }
+
+.banner { padding: 10px 14px; border-radius: var(--radius); }
+.banner.error { background: var(--bad-bg); color: var(--bad); }
+
+.approval-item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; margin-top: 10px; display: grid; gap: 6px;
+}
+.approval-item .buttons { display: flex; gap: 8px; margin-top: 4px; }
+
+.list-item { border-bottom: 1px solid var(--border); padding: 10px 0; display: grid; gap: 4px; }
+.list-item:last-child { border-bottom: 0; }
+.list-item .row { justify-content: flex-start; }
+
+pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; margin: 6px 0;
+}
+.result { background: var(--surface); max-height: none; font-family: inherit; font-size: 14px; }
+
+.drawer { position: fixed; inset: 0; z-index: 10; }
+.drawer-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .35); }
+.drawer-body {
+  position: absolute; right: 0; top: 0; bottom: 0; width: min(760px, 100%);
+  background: var(--bg); border-left: 1px solid var(--border); overflow-y: auto; padding: 20px;
+}
+.drawer-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.drawer-head h2 { font-size: 17px; margin: 8px 0 4px; }
+.actions { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.steps li { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.steps li.current { border-color: var(--accent); }
+.step-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.step-tool { font-size: 12px; color: var(--muted); }
+
+details.block { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
+details.block summary { cursor: pointer; font-weight: 600; }
+
+.timeline { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.timeline li { padding: 4px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 10px; }
+.timeline time { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.timeline .ev { font-weight: 600; font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .topbar { padding: 12px 16px; }
+  .drawer-body { padding: 16px; }
+}
