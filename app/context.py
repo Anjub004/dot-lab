@@ -7,11 +7,11 @@ LLM through the ``llm`` argument.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.agent.agent import Agent
 from app.agent.evaluator import Evaluator
-from app.agent.llm import LLMClient, build_llm
+from app.agent.llm import LLMClient, ModelCheck, build_llm
 from app.approvals.manager import ApprovalManager
 from app.config import Settings
 from app.database.database import Database
@@ -38,6 +38,24 @@ class AppContext:
     runner: TaskRunner
     monitors: MonitorService
     scheduler: MonitorScheduler
+    model_check: ModelCheck = field(
+        default_factory=lambda: ModelCheck(status="unchecked", detail="Model not checked yet.")
+    )
+
+    async def verify_model(self) -> ModelCheck:
+        """Check the configured model, if the LLM client supports it, and store the result."""
+        check = getattr(self.llm, "check_model", None)
+        if not self.llm.is_configured or check is None:
+            self.model_check = ModelCheck(
+                status="unchecked",
+                detail="OpenAI is not configured."
+                if not self.llm.is_configured
+                else "This LLM client does not support model checks.",
+            )
+            return self.model_check
+        self.model_check = ModelCheck(status="checking", detail="Checking model availability…")
+        self.model_check = await check()
+        return self.model_check
 
 
 def build_context(

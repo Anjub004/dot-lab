@@ -7,6 +7,7 @@ Run locally with::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from app import __version__
 from app.agent.llm import LLMClient
 from app.api.routes import protected_router, public_router
 from app.config import PROJECT_ROOT, Settings, get_settings
-from app.context import build_context
+from app.context import AppContext, build_context
 from app.database.database import DatabaseError
 from app.logging_config import configure_logging
 
@@ -42,7 +43,10 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             ctx.scheduler.start()
         if not ctx.llm.is_configured:
             logger.warning("OpenAI is not configured; tasks cannot be created until it is.")
+        # Verify OPENAI_MODEL in the background so a slow network never blocks startup.
+        model_check = asyncio.create_task(_log_model_check(ctx))
         yield
+        model_check.cancel()
         await ctx.scheduler.stop()
         await ctx.runner.shutdown()
         ctx.db.dispose()
@@ -73,6 +77,14 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     if DASHBOARD_DIR.is_dir():
         app.mount("/", StaticFiles(directory=DASHBOARD_DIR, html=True), name="dashboard")
     return app
+
+
+async def _log_model_check(ctx: AppContext) -> None:
+    result = await ctx.verify_model()
+    if result.status == "available":
+        logger.info(result.detail)
+    elif result.status != "unchecked":
+        logger.warning("model check: %s", result.detail)
 
 
 app = create_app()
