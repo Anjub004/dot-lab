@@ -22,6 +22,7 @@ from app.database.database import Database
 from app.database.models import NotificationRow
 from app.tools.base import (
     BaseTool,
+    PermissionLevel,
     ToolConfigurationError,
     ToolContext,
     ToolError,
@@ -130,6 +131,7 @@ class NotificationInput(BaseModel):
 
 class NotificationTool(BaseTool):
     name = "notification"
+    permission = PermissionLevel.EXTERNAL
     description = (
         "Notify the user. 'dashboard' shows the message in the Dot Lab dashboard; "
         "'webhook' sends it to an external webhook and always needs human approval."

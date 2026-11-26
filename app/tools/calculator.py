@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.tools.base import BaseTool, ToolContext, ToolError, ToolResult
+from app.tools.base import BaseTool, PermissionLevel, ToolContext, ToolError, ToolResult
 
 _BIN_OPS: dict[type[ast.operator], Callable[[Any, Any], Any]] = {
     ast.Add: operator.add,
@@ -148,6 +148,8 @@ def evaluate_expression(expression: str) -> float | int:
 
 class CalculatorTool(BaseTool):
     name = "calculator"
+    permission = PermissionLevel.READ
+    timeout_seconds = 5.0
     description = "Evaluate arithmetic expressions exactly. Use for any numeric calculation."
     input_model = CalculatorInput
 

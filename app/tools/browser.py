@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from app.tools.base import (
     BaseTool,
+    PermissionLevel,
     ToolAvailability,
     ToolContext,
     ToolError,
@@ -307,6 +308,7 @@ class BrowserInput(BaseModel):
 
 class BrowserTool(BaseTool):
     name = "browser"
+    permission = PermissionLevel.EXTERNAL
     description = (
         "Open a public web page (read-only) and return its text or its links. "
         "To navigate, call again with a link URL. Cannot log in, click, or submit forms."

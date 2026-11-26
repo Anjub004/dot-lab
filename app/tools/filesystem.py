@@ -19,7 +19,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.tools.base import BaseTool, ToolContext, ToolError, ToolInputError, ToolResult
+from app.tools.base import (
+    BaseTool,
+    PermissionLevel,
+    ToolContext,
+    ToolError,
+    ToolInputError,
+    ToolResult,
+)
 
 MAX_LIST_ENTRIES = 500
 
@@ -87,6 +94,7 @@ class FileSystemTool(BaseTool):
         "file requires human approval."
     )
     input_model = FileSystemInput
+    permission = PermissionLevel.WRITE
 
     def __init__(self, workspace_dir: Path, max_bytes: int, writes_require_approval: bool = False):
         self.workspace = Workspace(workspace_dir)
