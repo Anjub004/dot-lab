@@ -43,6 +43,7 @@ async def test_openai_llm_uses_responses_structured_outputs() -> None:
     plan = {
         "summary": "s",
         "steps": [{"description": "d", "tool": None, "requires_approval": False}],
+        "clarification_question": None,
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -135,7 +136,7 @@ class _Sink:
 async def test_openai_llm_records_usage_in_active_budget() -> None:
     from app.agent.usage import TaskBudget, use_budget
 
-    plan = {"summary": "s", "steps": []}
+    plan = {"summary": "s", "steps": [], "clarification_question": None}
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = _response(json.dumps(plan))

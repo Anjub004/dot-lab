@@ -40,6 +40,23 @@ async function api(path, options = {}) {
   return body;
 }
 
+/** Download the Markdown report of a task (fetch, so the X-API-Key header is sent). */
+async function downloadReport(taskId) {
+  const headers = {};
+  const key = apiKey();
+  if (key) headers["X-API-Key"] = key;
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/report`, { headers });
+  if (!res.ok) throw new Error(`Report download failed (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dot-lab-task-${taskId.slice(0, 8)}.md`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function showError(message) {
   const banner = $("error-banner");
   if (!message) { banner.hidden = true; return; }
@@ -153,10 +170,22 @@ function renderDetail(t) {
   if (["PENDING", "PLANNING", "RUNNING", "REVIEWING"].includes(t.status)) actions.push(`<button class="ghost" data-act="pause">Pause</button>`);
   if (t.status === "PAUSED") actions.push(`<button data-act="resume">Resume</button>`);
   if (!["COMPLETED", "FAILED", "CANCELLED"].includes(t.status)) actions.push(`<button class="reject" data-act="cancel">Cancel</button>`);
+  actions.push(`<button class="ghost" data-report="${esc(t.id)}">Download report</button>`);
   $("d-actions").innerHTML = actions.join("");
 
   const pending = t.approvals.filter((a) => a.status === "PENDING");
   const html = [];
+  const open = (t.clarifications || []).filter((c) => c.answer === null);
+  if (t.status === "WAITING_INPUT" && open.length) {
+    html.push(`<div class="panel approvals"><h2>Agent has a question for you</h2>
+      <p>${esc(open[open.length - 1].question)}</p>
+      <textarea id="answer-input" rows="3" maxlength="5000" placeholder="Your answer"></textarea>
+      <div class="row"><button data-answer="${esc(t.id)}">Send answer</button></div></div>`);
+  }
+  const answered = (t.clarifications || []).filter((c) => c.answer !== null);
+  if (answered.length) {
+    html.push(`<h3>Clarifications</h3>${answered.map((c) => `<div class="list-item"><div><strong>Q:</strong> ${esc(c.question)}</div><div><strong>A:</strong> ${esc(c.answer)}</div></div>`).join("")}`);
+  }
   if (pending.length) html.push(`<div class="panel approvals"><h2>Agent is waiting for your approval</h2>${pending.map(approvalCard).join("")}</div>`);
   if (t.error) html.push(`<div class="banner error">${esc(t.error)}</div>`);
   if (t.result) html.push(`<h3>Final result</h3><pre class="result">${esc(t.result)}</pre>`);
@@ -184,11 +213,13 @@ function renderDetail(t) {
     t.memory.map((m) => `<div class="list-item"><span class="tag">${esc(m.kind)}</span><pre>${esc(m.content)}</pre></div>`).join("") || '<p class="muted">None.</p>'
   }</details>`);
 
-  // Preserve which <details> blocks are open across refreshes.
+  // Preserve open <details> blocks and any half-typed answer across refreshes.
   const content = $("d-content");
-  const open = [...content.querySelectorAll("details.block")].map((d) => d.open);
+  const draft = $("answer-input") ? $("answer-input").value : "";
+  const openBlocks = [...content.querySelectorAll("details.block")].map((d) => d.open);
   content.innerHTML = html.join("");
-  content.querySelectorAll("details.block").forEach((d, i) => { if (open[i]) d.open = true; });
+  content.querySelectorAll("details.block").forEach((d, i) => { if (openBlocks[i]) d.open = true; });
+  if ($("answer-input") && draft) $("answer-input").value = draft;
 }
 
 async function openTask(id) {
@@ -250,7 +281,7 @@ async function act(fn) {
 }
 
 document.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-approve],[data-reject],[data-task],[data-task-open],[data-close],[data-act],[data-monitor-run],[data-monitor-toggle],[data-monitor-delete],[data-notification-read]");
+  const el = e.target.closest("[data-approve],[data-reject],[data-task],[data-task-open],[data-close],[data-act],[data-answer],[data-report],[data-monitor-run],[data-monitor-toggle],[data-monitor-delete],[data-notification-read]");
   if (!el) return;
   const d = el.dataset;
   if (d.approve) act(() => api(`/approvals/${d.approve}/approve`, { method: "POST", body: "{}" }));
@@ -263,6 +294,12 @@ document.addEventListener("click", (e) => {
   else if (d.taskOpen) openTask(d.taskOpen);
   else if (d.close !== undefined) closeDrawer();
   else if (d.act) act(() => api(`/tasks/${state.openTaskId}/${d.act}`, { method: "POST" }));
+  else if (d.answer) {
+    const answer = ($("answer-input")?.value || "").trim();
+    if (!answer) { showError("Please type an answer first."); return; }
+    act(() => api(`/tasks/${d.answer}/answer`, { method: "POST", body: JSON.stringify({ answer }) }));
+  }
+  else if (d.report) downloadReport(d.report).then(() => showError(null), (err) => showError(err.message));
   else if (d.monitorRun) act(() => api(`/monitors/${d.monitorRun}/run`, { method: "POST" }));
   else if (d.monitorToggle) act(() => api(`/monitors/${d.monitorToggle}/${d.enabled === "true" ? "disable" : "enable"}`, { method: "POST" }));
   else if (d.monitorDelete) { if (confirm("Delete this monitor?")) act(() => api(`/monitors/${d.monitorDelete}`, { method: "DELETE" })); }

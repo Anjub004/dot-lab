@@ -55,6 +55,8 @@ stateDiagram-v2
     [*] --> PENDING
     PENDING --> PLANNING
     PLANNING --> RUNNING
+    PLANNING --> WAITING_INPUT: planner asks a question
+    WAITING_INPUT --> PENDING: user answers
     RUNNING --> WAITING_APPROVAL: sensitive tool call
     WAITING_APPROVAL --> PENDING: approved / rejected
     RUNNING --> REVIEWING: all steps finished
@@ -77,6 +79,21 @@ enforced in `app/agent/state.py`; anything not listed there is rejected.
 **A task is COMPLETED only when the reviewer confirms the goal is satisfied.**
 If it is not, the task is FAILED and the partial output is kept in `result`
 with a "Partial result" note.
+
+## Clarification questions
+
+`PlannerOutput.clarification_question` is a required, nullable field (OpenAI
+strict mode needs every field present). When the planner fills it, no plan is
+saved: the question is stored in `tasks.clarifications_json`, the task moves to
+`WAITING_INPUT`, and in a conversation the question is posted as a reply.
+`POST /api/tasks/{id}/answer` (or the next message in the conversation) stores
+the answer and re-queues the task.
+
+The answered questions are appended to the goal ("Clarifications from the
+user: Q/A") for the planner, executor and reviewer, so every module works from
+the same clarified goal. After `MAX_CLARIFICATIONS` (2) questions, the planner's
+instructions forbid asking; a question is then rejected as an invalid plan and
+the model is asked again, with that feedback, to plan with stated assumptions.
 
 ## Memory: three kinds of context
 

@@ -31,6 +31,18 @@ class PlannedStep(BaseModel):
 class PlannerOutput(BaseModel):
     summary: str = Field(description="One-sentence summary of the approach.")
     steps: list[PlannedStep]
+    clarification_question: str | None = Field(
+        description=(
+            "One short question to the user, ONLY if essential information is missing and "
+            "cannot be reasonably assumed; otherwise null. When set, steps may be empty."
+        )
+    )
+
+
+class ClarificationRequest(BaseModel):
+    """The planner needs an answer from the user before it can plan."""
+
+    question: str
 
 
 PLANNER_SYSTEM = """You are the planning module of Dot Lab, an experimental autonomous agent.
@@ -46,6 +58,10 @@ Rules:
 - Set requires_approval = true for steps that contact external parties, overwrite or
   delete data, or are otherwise risky.
 - If a needed tool is not listed, plan around it using the tools that ARE listed.
+- Ask a clarification_question only when essential information is missing AND a wrong
+  guess would waste the task (e.g. which file, which period, which recipient). If a
+  sensible default exists, use it and say so in the summary instead of asking.
+{clarification_rule}
 - If the goal refers to an earlier conversation ("the same for June", "that file"),
   use the recent conversation to resolve it, and write every step so it is complete on
   its own (name the file, columns, dates, etc.).
@@ -84,9 +100,18 @@ class Planner:
         tools: list[BaseTool],
         memory_context: str = "",
         conversation_context: str = "",
-    ) -> Plan:
-        """Ask the LLM for a plan, re-asking with feedback if it is invalid."""
-        system = PLANNER_SYSTEM.format(max_steps=self.max_steps, tools=describe_tools(tools))
+        allow_clarification: bool = True,
+    ) -> Plan | ClarificationRequest:
+        """Ask the LLM for a plan (or one clarification question), re-asking if invalid."""
+        rule = (
+            "- You may ask at most one question now."
+            if allow_clarification
+            else "- Asking is NOT allowed now: clarification_question must be null. Plan with "
+            "the most reasonable assumptions and state them in the summary."
+        )
+        system = PLANNER_SYSTEM.format(
+            max_steps=self.max_steps, tools=describe_tools(tools), clarification_rule=rule
+        )
         prompt = ""
         if conversation_context:
             prompt += f"Recent conversation (oldest first):\n{conversation_context}\n\n"
@@ -99,15 +124,28 @@ class Planner:
             output = await self.llm.generate(
                 system=system, prompt=prompt + feedback, schema=PlannerOutput
             )
-            problems = self.validate(output, {t.name for t in tools})
+            problems = self.validate(output, {t.name for t in tools}, allow_clarification)
             if not problems:
+                question = (output.clarification_question or "").strip()
+                if question:
+                    return ClarificationRequest(question=question[:1000])
                 return self.to_plan(goal, output)
             logger.warning("invalid plan (attempt %s): %s", attempt, "; ".join(problems))
             feedback = "\n\nYour previous plan was invalid:\n- " + "\n- ".join(problems)
         raise PlanValidationError("Planner could not produce a valid plan: " + "; ".join(problems))
 
-    def validate(self, output: PlannerOutput, tool_names: set[str]) -> list[str]:
+    def validate(
+        self, output: PlannerOutput, tool_names: set[str], allow_clarification: bool = False
+    ) -> list[str]:
         problems: list[str] = []
+        if (output.clarification_question or "").strip():
+            if allow_clarification:
+                return []  # a question replaces the plan; steps are ignored
+            problems.append(
+                "Questions are not allowed now. Set clarification_question to null and plan "
+                "with reasonable assumptions."
+            )
+            return problems
         if not output.steps:
             problems.append("The plan has no steps.")
         if len(output.steps) > self.max_steps:

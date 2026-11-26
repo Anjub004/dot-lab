@@ -1,15 +1,23 @@
-"""Task endpoints: create, list, inspect, pause, resume, cancel."""
+"""Task endpoints: create, list, inspect, answer, report, pause, resume, cancel."""
 
 from __future__ import annotations
 
 import contextlib
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.agent.state import EventType, TaskStatus
 from app.api.deps import get_ctx
-from app.api.schemas import TaskCreate, TaskCreated, TaskDetail, TaskSummary
+from app.api.schemas import (
+    ClarificationAnswer,
+    TaskCreate,
+    TaskCreated,
+    TaskDetail,
+    TaskSummary,
+)
 from app.context import AppContext
+from app.database.database import utcnow
+from app.services.report_service import build_task_report
 from app.services.task_service import InvalidTransitionError, TaskNotFoundError, TaskView
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -63,6 +71,7 @@ def get_task(task_id: str, ctx: AppContext = Depends(get_ctx)) -> TaskDetail:
     return TaskDetail(
         **summary.model_dump(),
         plan=task.plan,
+        clarifications=task.clarifications,
         iterations=task.iterations,
         result=task.result,
         error=task.error,
@@ -71,6 +80,48 @@ def get_task(task_id: str, ctx: AppContext = Depends(get_ctx)) -> TaskDetail:
         approvals=ctx.approvals.list(task_id=task_id),
         memory=ctx.memory.retrieve(task_id=task_id, limit=100),
         usage=ctx.agent.budget_for(task_id).report(),
+    )
+
+
+@router.post("/{task_id}/answer", response_model=TaskSummary)
+async def answer_task(
+    task_id: str, body: ClarificationAnswer, ctx: AppContext = Depends(get_ctx)
+) -> TaskSummary:
+    """Answer the question a task asked (status WAITING_INPUT) and continue it."""
+    _get(ctx, task_id)
+    try:
+        task = answer_and_resume(ctx, task_id, body.answer)
+    except InvalidTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return TaskSummary.from_view(task)
+
+
+def answer_and_resume(ctx: AppContext, task_id: str, answer: str) -> TaskView:
+    """Shared by the tasks and conversations APIs. Must run on the event loop."""
+    task = ctx.tasks.answer_clarification(task_id, answer)
+    ctx.runner.submit(task_id)
+    return task
+
+
+@router.get("/{task_id}/report", response_class=Response)
+def task_report(
+    task_id: str, download: bool = True, ctx: AppContext = Depends(get_ctx)
+) -> Response:
+    """The task as a Markdown report (attachment by default; ``download=false`` to view)."""
+    task = _get(ctx, task_id)
+    text = build_task_report(
+        task,
+        events=ctx.tasks.list_events(task_id),
+        tool_calls=ctx.tasks.list_tool_calls(task_id),
+        approvals=ctx.approvals.list(task_id=task_id),
+        usage=ctx.agent.budget_for(task_id).report(),
+        generated_at=utcnow(),
+    )
+    disposition = "attachment" if download else "inline"
+    return Response(
+        content=text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'{disposition}; filename="dot-lab-task-{task_id[:8]}.md"'},
     )
 
 

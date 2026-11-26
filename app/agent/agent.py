@@ -31,8 +31,9 @@ from pydantic import BaseModel
 from app.agent.evaluator import Evaluator, StepEvaluation
 from app.agent.executor import StepExecutor
 from app.agent.llm import LLMClient, LLMConfigurationError, LLMError
-from app.agent.planner import Planner, PlannerOutput
+from app.agent.planner import ClarificationRequest, Planner, PlannerOutput
 from app.agent.state import (
+    MAX_CLARIFICATIONS,
     EventType,
     Plan,
     PlanStep,
@@ -62,6 +63,7 @@ NON_TERMINAL = {
     TaskStatus.RUNNING,
     TaskStatus.REVIEWING,
     TaskStatus.WAITING_APPROVAL,
+    TaskStatus.WAITING_INPUT,
     TaskStatus.PAUSED,
 }
 
@@ -184,11 +186,17 @@ class Agent:
     async def _create_plan(self, task: TaskView) -> None:
         self.tasks.add_event(task.id, EventType.PLANNING_STARTED, "Creating plan")
         plan = await self.planner.create_plan(
-            task.goal,
+            self._goal(task),
             self.tools.available(),
             self._memory_context(task.goal, task.id),
             self._conversation_context(task),
+            allow_clarification=len(task.clarifications) < MAX_CLARIFICATIONS,
         )
+        if isinstance(plan, ClarificationRequest):
+            # Ask instead of guessing. The loop stops; answering re-queues the task.
+            if self.tasks.request_clarification(task.id, plan.question):
+                self._reply(task.id, plan.question)
+            return
         self.tasks.save_plan(task.id, plan)
         self.tasks.add_event(
             task.id,
@@ -214,7 +222,7 @@ class Agent:
         context = self._step_context(plan)
 
         if tool is None:
-            output = await self.executor.reason(task.goal, step, context)
+            output = await self.executor.reason(self._goal(task), step, context)
             succeeded, outcome = True, output
         else:
             resolved = await self._resolve_arguments(task, plan, step, tool, context)
@@ -225,7 +233,7 @@ class Agent:
             succeeded, outcome = await self._run_tool(task, step, tool, resolved)
 
         step.attempts += 1
-        evaluation = await self.evaluator.evaluate_step(task.goal, step, outcome, succeeded)
+        evaluation = await self.evaluator.evaluate_step(self._goal(task), step, outcome, succeeded)
         for observation in evaluation.observations[:5]:
             self._remember(task.id, MemoryKind.OBSERVATION, observation, step_id=step.id)
         return self._finish_step(task, plan, step, succeeded, outcome, evaluation)
@@ -278,7 +286,9 @@ class Agent:
                 return tool.parse_input(approval.input)
             return self._handle_rejection(task, plan, step, approval.decision_note)
 
-        args, explanation = await self.executor.prepare_arguments(task.goal, step, tool, context)
+        args, explanation = await self.executor.prepare_arguments(
+            self._goal(task), step, tool, context
+        )
         reason = self.approvals.policy_reason(
             tool_name=tool.name,
             step_requires_approval=step.requires_approval,
@@ -398,7 +408,9 @@ class Agent:
             and plan.replans < self.settings.max_replans
         ):
             extra = evaluation.additional_steps[: self.settings.max_plan_steps]
-            problems = self.planner.validate(PlannerOutput(summary="", steps=extra), set(available))
+            problems = self.planner.validate(
+                PlannerOutput(summary="", steps=extra, clarification_question=None), set(available)
+            )
             if not problems:
                 if not self.tasks.try_transition(
                     task.id, {TaskStatus.REVIEWING}, TaskStatus.RUNNING
@@ -475,6 +487,15 @@ class Agent:
                 )
         text = "\n\n".join(blocks)
         return text[-total:] if len(text) > total else text
+
+    @staticmethod
+    def _goal(task: TaskView) -> str:
+        """The goal plus any clarifications the user gave, as every module should see it."""
+        answered = [c for c in task.clarifications if c.answer]
+        if not answered:
+            return task.goal
+        qa = "\n".join(f"- Q: {c.question}\n  A: {c.answer}" for c in answered)
+        return f"{task.goal}\n\nClarifications from the user:\n{qa}"
 
     def _conversation_context(self, task: TaskView) -> str:
         """Short-term context: earlier messages of the task's conversation, if any."""

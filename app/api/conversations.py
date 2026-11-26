@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.agent.state import TaskStatus
 from app.api.deps import get_ctx
-from app.api.tasks import check_can_create_task
+from app.api.tasks import answer_and_resume, check_can_create_task
 from app.context import AppContext
 from app.services.conversation_service import (
     Conversation,
@@ -89,10 +89,20 @@ async def post_message(
 ) -> MessagePosted:
     """Add a user message and start a task for it.
 
+    If a task of this conversation is waiting for an answer (WAITING_INPUT), the
+    message is that answer and the waiting task continues instead.
+
     ``async`` on purpose: starting the background task needs the event loop,
     which a plain ``def`` endpoint (run in a worker thread) does not have.
     """
     _get(ctx, conversation_id)
+    waiting = ctx.tasks.list_tasks(
+        status=TaskStatus.WAITING_INPUT, conversation_id=conversation_id, limit=1
+    )
+    if waiting:
+        task = answer_and_resume(ctx, waiting[0].id, body.content)
+        message = ctx.conversations.add_message(conversation_id, "user", body.content, task.id)
+        return MessagePosted(message=message, task_id=task.id, task_status=task.status)
     check_can_create_task(ctx, body.content)
     task = ctx.tasks.create_task(body.content, conversation_id=conversation_id)
     message = ctx.conversations.add_message(conversation_id, "user", body.content, task.id)

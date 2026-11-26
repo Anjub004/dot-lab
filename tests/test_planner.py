@@ -67,6 +67,8 @@ async def test_planner_gives_up_after_invalid_plans(tools) -> None:  # type: ign
 
 
 async def test_planner_rejects_empty_plan(tools) -> None:  # type: ignore[no-untyped-def]
-    llm = ScriptedLLM({PlannerOutput: [PlannerOutput(summary="", steps=[])]})
+    llm = ScriptedLLM(
+        {PlannerOutput: [PlannerOutput(summary="", steps=[], clarification_question=None)]}
+    )
     with pytest.raises(PlanValidationError, match="no steps"):
         await Planner(llm, max_steps=3).create_plan("goal", tools)

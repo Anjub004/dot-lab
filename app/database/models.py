@@ -22,6 +22,7 @@ class TaskRow(Base):
     goal: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), index=True)
     plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    clarifications_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_step_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     iterations: Mapped[int] = mapped_column(Integer, default=0)
     result: Mapped[str | None] = mapped_column(Text, nullable=True)

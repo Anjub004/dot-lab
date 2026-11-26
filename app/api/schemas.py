@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from app.agent.llm import ModelCheck
-from app.agent.state import Plan, TaskStatus
+from app.agent.state import Clarification, Plan, TaskStatus
 from app.agent.usage import UsageReport
 from app.approvals.manager import Approval
 from app.memory.models import MemoryRecord
@@ -74,6 +74,7 @@ class TaskSummary(BaseModel):
 
 class TaskDetail(TaskSummary):
     plan: Plan | None
+    clarifications: list[Clarification]
     iterations: int
     result: str | None
     error: str | None
@@ -82,6 +83,12 @@ class TaskDetail(TaskSummary):
     approvals: list[Approval]
     memory: list[MemoryRecord]
     usage: UsageReport
+
+
+class ClarificationAnswer(BaseModel):
+    answer: str = Field(min_length=1, max_length=5000)
+
+    _clean = field_validator("answer")(_strip_non_empty)
 
 
 class ApprovalDecision(BaseModel):
@@ -102,6 +109,7 @@ class Overview(BaseModel):
     active_tasks: int
     completed_tasks: int
     waiting_approvals: int
+    waiting_input: int = 0
     failed_tasks: int
     paused_tasks: int
     monitoring_jobs: int
