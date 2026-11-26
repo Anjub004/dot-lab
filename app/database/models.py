@@ -102,6 +102,22 @@ class MemoryRow(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
+class LlmUsageRow(Base):
+    """Token usage of one LLM call, used for per-task budgets and reporting."""
+
+    __tablename__ = "llm_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    model: Mapped[str] = mapped_column(String(100))
+    purpose: Mapped[str] = mapped_column(String(64))  # e.g. PlannerOutput, StepEvaluation
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class MonitorRow(Base):
     __tablename__ = "monitors"
 
