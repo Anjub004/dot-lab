@@ -48,6 +48,8 @@ def script_calculation(llm: ScriptedLLM) -> None:
 def test_health_and_dashboard(client: TestClient) -> None:
     health = client.get("/api/health").json()
     assert health["status"] == "ok" and health["llm_configured"] is True
+    # The scripted test LLM has no check_model(), so the model is reported unchecked.
+    assert health["model_check"]["status"] == "unchecked"
     assert {t["name"] for t in health["tools"]} >= {"calculator", "browser"}
     page = client.get("/")
     assert page.status_code == 200 and "Dot Lab" in page.text
@@ -196,3 +198,13 @@ def test_tools_and_memory_endpoints(client: TestClient) -> None:
     assert client.get("/api/memory/search", params={"q": "agents"}).json()[0]["id"] == record.id
     assert client.delete(f"/api/memory/{record.id}").status_code == 204
     assert client.delete(f"/api/memory/{record.id}").status_code == 404
+
+
+def test_health_reports_model_not_configured(settings: Settings) -> None:
+    with TestClient(create_app(settings, llm=UnconfiguredLLM())) as c:
+        deadline = time.monotonic() + 5
+        check = c.get("/api/health").json()["model_check"]
+        while check["detail"] != "OpenAI is not configured." and time.monotonic() < deadline:
+            time.sleep(0.05)
+            check = c.get("/api/health").json()["model_check"]
+    assert check == {"status": "unchecked", "detail": "OpenAI is not configured."}
