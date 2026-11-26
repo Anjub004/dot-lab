@@ -1,163 +1,65 @@
 # Dot Lab
 
-[![CI](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml) [![Kaggle notebook](https://img.shields.io/badge/Kaggle-walkthrough%20notebook-20BEFF?logo=kaggle&logoColor=white)](https://www.kaggle.com/code/anju004/dot-lab-always-on-ai-agent-walkthrough)
+[![CI](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Anjub004/dot-lab/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Anjub004/dot-lab?sort=semver)](https://github.com/Anjub004/dot-lab/releases)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Kaggle notebook](https://img.shields.io/badge/Kaggle-walkthrough%20notebook-20BEFF?logo=kaggle&logoColor=white)](https://www.kaggle.com/code/anju004/dot-lab-always-on-ai-agent-walkthrough)
 
-An experimental always-on AI agent that plans, uses tools, maintains memory, executes multi-step tasks, and requests human approval when needed.
+An experimental always-on AI agent that plans, uses tools, maintains memory, executes multi-step tasks, and asks for human approval when needed.
 
 > **This project is not affiliated with, endorsed by, or an implementation of OpenAI Dots.**
 > Dot Lab is an independent experimental project inspired by the general concept of autonomous, always-on AI agents.
 
----
+![Dot Lab overview: task counts, an action waiting for approval, recent tasks and live agent activity](docs/screenshots/overview.png)
 
 ## What is Dot Lab?
 
-Dot Lab is a small, readable, working implementation of an *agentic* workflow. Instead of sending one prompt to an LLM and returning one answer, you give Dot Lab a **goal** and it:
+Instead of sending one prompt and returning one answer, you give Dot Lab a **goal**. It writes a plan, runs each step with a tool, checks the results, asks you when it needs a decision, and reviews whether the goal was really achieved. Everything it does is recorded and visible in a dashboard.
 
-1. understands the goal and creates a structured **plan** (validated Pydantic models, not string parsing),
-2. picks a **tool** for each step and generates the tool's arguments,
-3. **executes** each step with timeouts, retries and error handling,
-4. stores results and observations in persistent **memory**,
-5. **evaluates** each result and decides what to do next (continue, retry, finish early, or stop),
-6. **pauses for human approval** before sensitive actions,
-7. keeps running in the **background** while you watch progress in a dashboard,
-8. evaluates whether the goal is achieved, adds steps if needed (bounded), and produces a **final result**,
-9. keeps the complete **task history** (plan, events, tool calls, approvals, memory).
+It is a small, readable codebase for learning how agents work: plain Python with FastAPI and the OpenAI API, **no agent framework**, and every simplification documented.
 
-It also has an experimental **monitoring mode** that re-runs a goal on a schedule and notifies you only when something meaningful changed.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/workspace.png" alt="AI Workspace: a chat where the agent answers which branch had the highest revenue and saves a report"></td>
+    <td width="50%"><img src="docs/screenshots/task-detail.png" alt="Task detail: final result, plan step and the data_summary tool output with a monthly gross profit table"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>AI Workspace</b>: chat, follow-ups use earlier messages</td>
+    <td align="center"><b>Task detail</b>: result, plan, tool output, history</td>
+  </tr>
+</table>
 
-## Why this project exists
-
-"Always-on" agents raise interesting engineering questions: how should an agent break work down, how do you stop it looping forever, where does human judgement come in, what should it remember, and how do you keep it from touching things it shouldn't? Dot Lab is an educational/research codebase for exploring those questions with code you can read in an afternoon. It favours clarity over cleverness and documents every simplification.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    User([User]) -->|goal| Dashboard[Dashboard<br/>HTML/CSS/JS]
-    User -->|REST| API
-    Dashboard --> API[FastAPI]
-    API --> Runner[Background runner<br/>asyncio]
-    API --> Approvals
-    Runner --> Agent
-    Scheduler[Monitor scheduler] --> Runner
-
-    subgraph Agent[Agent loop]
-        Planner --> Executor
-        Executor --> Evaluator
-        Evaluator -->|continue / retry / finish / fail| Executor
-    end
-
-    Agent --> Memory[(Memory<br/>SQLite)]
-    Agent --> Approvals[Approval manager]
-    Agent --> LLM[OpenAI Responses API<br/>Structured Outputs]
-    Executor --> Tools
-
-    subgraph Tools[Tool registry]
-        Calc[Calculator]
-        Search[Web search]
-        Browser[Browser]
-        Files[File system]
-        Notify[Notification]
-    end
-
-    Search --> Provider[Tavily / Brave / none]
-    Browser --> Web((Public web))
-    Files --> Workspace[(data/workspace)]
-    Agent --> DB[(Task history<br/>SQLite)]
-    DB --> Dashboard
-```
-
-### The agent loop
-
-```text
-while task is PLANNING/RUNNING:
-    reload state from DB            # sees pause/cancel immediately
-    stop if MAX_AGENT_ITERATIONS reached
-    if no plan:      create plan (LLM -> PlannerOutput, validated against tool registry)
-    step = next unfinished step
-    if no step:      REVIEWING: goal satisfied -> COMPLETED; not satisfied -> add steps
-                     (max MAX_REPLANS times) or FAILED with the partial result kept
-    if tool step:    generate args (validated against the tool's Pydantic input model)
-                     if approval needed -> record request, WAITING_APPROVAL, exit loop
-                     execute tool (timeout + retries for transient errors)
-    else:            reasoning step (LLM)
-    record tool call and events (execution log)
-    evaluate step -> continue | retry (bounded) | finish early | fail
-```
-
-The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a task can resume after an approval, a pause or a restart.
+The screenshots come from the real application running on the bundled demo sales data: the tools really ran and every number is computed by them. Only the model's wording is scripted, so the images can be regenerated without an API key ([`scripts/make_screenshots.py`](scripts/make_screenshots.py)).
 
 ## Features
 
-- **Goal → plan → act → evaluate** loop with iteration limit, task timeout, per-tool timeout, bounded retries and bounded re-planning.
-- **Structured outputs** everywhere the LLM is used (planner, tool arguments, step evaluation, goal evaluation, monitor comparison) via `client.responses.parse(text_format=...)`.
-- **Modular tools** behind a common `BaseTool` interface: calculator (safe AST evaluator), web search (pluggable providers), read-only browser (SSRF-protected), sandboxed file system, notifications (dashboard + webhook), and data tools (see below).
-- **Data analysis tools** (pandas, workspace CSV files only): `csv_analyzer` (profile / aggregate / top rows with safe structured filters), `data_summary` (totals, day/week/month trend with partial periods flagged, top/bottom ranking with share %), `report_generator` (saves a Markdown report to `reports/`).
-- **Tool permission levels**: every tool is `read`, `write` or `external`. `TOOL_PERMISSION_LEVEL` hides and blocks every tool above the chosen level. Tools can also set their own shorter timeout.
-- **Human-in-the-loop approvals**: webhook messages, file overwrites, steps the planner marks sensitive, and any tool listed in `APPROVAL_REQUIRED_TOOLS`. The approved input is executed exactly — it is never regenerated.
-- **Long-term memory** in SQLite with categories and keyword search: list, search, add notes, update and delete through `/api/memory`. Relevant results, reviewer observations and user notes are given to the planner. Goals, plans and raw tool output stay in the execution log instead.
-- **Conversations (short-term context)**: messages in a conversation start tasks; earlier messages are given to the planner and reviewer, so follow-ups like "now the same for June" work. Results are posted back as replies.
-- **Database migrations** with Alembic, applied automatically on start-up (existing databases are upgraded in place without losing data).
-- **Honest reviewer**: a task is `COMPLETED` only when the reviewer confirms the goal is satisfied; otherwise it is `FAILED` with the partial result kept.
-- **Token and cost budgets**: every LLM call's token usage is recorded per task (`llm_usage` table, shown in the task detail and dashboard). A task fails cleanly once it reaches `MAX_TASK_TOKENS` or the optional `MAX_TASK_COST_USD`.
-- **Startup model check**: `GET /api/health` reports whether `OPENAI_MODEL` is available to your API key.
-- **Background execution** with asyncio, concurrency limit, pause / resume / cancel, and recovery of interrupted tasks on restart.
-- **Monitoring mode** (experimental): scheduled goals, LLM-based change detection, notify only on meaningful change.
-- **Dashboard** (dark, responsive, no build step) with 8 sections:
-  - **Overview**: KPIs, items that need you (approvals, questions), task status, recent tasks and activity, notifications.
-  - **AI Workspace**: chat; each message starts a task, follow-ups use the conversation, questions are answered by replying.
-  - **Tasks**: start tasks, filter by status, progress, monitors (create, run, enable/disable, delete).
-  - **Execution History**: finished tasks with search, duration and report download.
-  - **Agent Activity**: live feed of every event across tasks, filterable (tools, approvals, questions, errors).
-  - **Memory**: add notes, filter by category or kind, search, edit, delete.
-  - **Reports**: view/download reports the agent saved, and download any task's report.
-  - **Settings**: API key for this browser, AI connection and model check, configuration (read-only), tools and permissions.
-  - A task drawer everywhere: plan, current step, question box, approvals, history, tool calls, memory, actions.
-- **Structured JSON logging** with secret redaction.
-- **Optional API key** protection for the HTTP API.
-- **Offline test suite** (no API key or network needed).
+- **Plan → act → review loop** with structured outputs, iteration and time limits, bounded retries and re-planning. A task only counts as completed when the reviewer confirms the goal is met; otherwise the partial result is kept and the task is marked failed.
+- **Tools** with permission levels (`read` / `write` / `external`): calculator, web search, read-only browser, sandboxed file system, notifications, and **data analysis** on CSV files (profiles, aggregations, monthly trends with partial periods flagged, rankings, Markdown reports).
+- **Human in the loop**: approvals before sensitive actions (the exact approved input is executed), and **clarification questions** instead of guesses.
+- **Memory**: long-term memory with categories and your own notes, plus conversations for short-term context.
+- **Budgets**: token and optional cost limits per task, with usage shown for every task.
+- **Always on**: background execution, pause / resume / cancel, recovery after restart, and an experimental **monitoring mode** that notifies you only when something meaningful changed.
+- **Dashboard** (dark, responsive, no build step) with Overview, AI Workspace, Tasks, Execution History, Agent Activity, Memory, Reports and Settings.
+- **Engineering**: Alembic migrations, JSON logs with secret redaction, optional API key, offline test suite, live tests, browser smoke test, Docker.
 
-## Tech stack
+<details>
+<summary><b>More screenshots</b></summary>
 
-Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 + SQLite + Alembic, OpenAI Python SDK (Responses API), httpx, pandas, python-dotenv, asyncio, pytest, Ruff. Frontend: plain HTML, CSS and JavaScript (no build step).
+| | |
+|---|---|
+| ![Agent Activity feed with filters](docs/screenshots/activity.png) | ![Memory with categories and user notes](docs/screenshots/memory.png) |
+| **Agent Activity**: every event across tasks | **Memory**: notes, categories, search, edit |
+| ![Reports saved by the agent and task reports](docs/screenshots/reports.png) | ![Settings: AI connection, configuration and tools](docs/screenshots/settings.png) |
+| **Reports**: saved reports and task reports | **Settings**: connection, configuration, tools |
 
-## Project structure
+<p align="center"><img src="docs/screenshots/mobile.png" width="300" alt="AI Workspace on a phone"></p>
 
-```text
-dot-lab/
-├── app/
-│   ├── main.py              # FastAPI app factory, lifespan, static dashboard
-│   ├── config.py            # Settings from environment / .env
-│   ├── context.py           # Wires all components together (used by API + examples)
-│   ├── logging_config.py    # JSON logs + secret redaction
-│   ├── api/                 # routes.py (system/notifications), tasks.py, memory.py,
-│   │                        # conversations.py, approvals.py, monitors.py, schemas.py, deps.py
-│   ├── agent/               # agent.py (loop), planner.py, executor.py,
-│   │                        # evaluator.py, state.py, llm.py
-│   ├── memory/              # memory.py (MemoryStore + SQLite impl), models.py
-│   ├── tools/               # base.py, calculator.py, web_search.py, browser.py,
-│   │                        # filesystem.py, notifications.py, csv_analyzer.py,
-│   │                        # data_summary.py, report_generator.py, data_common.py
-│   ├── approvals/           # manager.py
-│   ├── database/            # database.py (engine/session/migrate), models.py, migrations/
-│   └── services/            # task_service.py, runner.py (background), monitoring.py,
-│                            # usage_service.py, conversation_service.py
-├── dashboard/               # index.html, styles.css, app.js (8 sections, plain JavaScript)
-├── scripts/                 # ui_smoke_test.py (optional browser test of the dashboard)
-├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py,
-│                            # seed_demo_data.py, data/demo_sales.csv
-├── tests/                   # offline pytest suite with a scripted fake LLM
-├── docs/                    # architecture.md (components, lifecycle, memory design)
-├── alembic.ini              # migrations CLI (migrations live in app/database/migrations/)
-├── .github/workflows/ci.yml # lint + tests on every push
-├── data/                    # SQLite DB + agent workspace (git-ignored)
-├── .env.example  Dockerfile  docker-compose.yml  pyproject.toml  requirements.txt
-└── README.md  SECURITY.md  CONTRIBUTING.md  LICENSE
-```
+</details>
 
-Additions to the suggested layout, and why: `app/context.py` (single place that builds dependencies, avoids circular imports), `app/agent/llm.py` (LLM abstraction so tests can use a fake), `app/services/runner.py` (background execution kept separate from task persistence), `app/api/monitors.py`, `schemas.py`, `deps.py`, and `app/logging_config.py`.
+## Quick start
 
-## Installation
+Requirements: Python 3.12+ and an OpenAI API key with access to a model that supports [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs) on the Responses API.
 
 ```bash
 git clone https://github.com/Anjub004/dot-lab.git
@@ -165,286 +67,138 @@ cd dot-lab
 python3.12 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-```
-
-## Configuration
-
-Edit `.env`. The minimum is:
-
-```dotenv
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=<a model that supports Structured Outputs on the Responses API>
-```
-
-Dot Lab does not hard-code a model name; choose one from the [OpenAI models page](https://platform.openai.com/docs/models).
-
-Optional but recommended for research goals:
-
-```dotenv
-SEARCH_PROVIDER=tavily        # or: brave
-SEARCH_API_KEY=...
-```
-
-| Variable | Purpose |
-|---|---|
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Required to run tasks. Without them the API returns 503 on task creation and the dashboard shows "AI not configured". |
-| `DATABASE_URL` | SQLAlchemy URL. Default `sqlite:///./data/dot_lab.db` (relative to the project root). |
-| `WORKSPACE_DIR` | The only folder the file-system tool can touch. Default `./data/workspace`. |
-| `SEARCH_PROVIDER`, `SEARCH_API_KEY` | `none` (default), `tavily` or `brave`. When `none`, web search is hidden from the planner and the tool explains how to configure it. |
-| `BROWSER_BACKEND` | `httpx` (default, no JavaScript) or `playwright` (`pip install playwright && playwright install chromium`). |
-| `BROWSER_ALLOWED_DOMAINS` | Optional comma-separated allow-list. |
-| `NOTIFICATION_WEBHOOK_URL` | Optional external webhook (always requires approval). |
-| `MAX_AGENT_ITERATIONS`, `MAX_PLAN_STEPS`, `MAX_STEP_RETRIES`, `MAX_REPLANS`, `TOOL_TIMEOUT_SECONDS`, `TASK_TIMEOUT_SECONDS`, `MAX_CONCURRENT_TASKS` | Safety limits. |
-| `MAX_TASK_TOKENS` | Token budget per task (input + output, all runs of the task). Default `200000`; `0` = no limit. |
-| `MAX_TASK_COST_USD`, `OPENAI_INPUT_COST_PER_1M`, `OPENAI_OUTPUT_COST_PER_1M` | Optional cost budget. Copy your model's prices (USD per 1M tokens) from the OpenAI pricing page; cost is an estimate, not your bill. |
-| `CONVERSATION_CONTEXT_MESSAGES` | Earlier conversation messages given to the planner and reviewer. Default `10`; `0` turns short-term context off. |
-| `TOOL_PERMISSION_LEVEL` | Highest tool permission the agent may use: `read` (calculator, CSV tools), `write` (+ file system, report generator) or `external` (default: + web search, browser, notifications). |
-| `CSV_MAX_BYTES` | Largest CSV the data tools will read. Default `20000000` (20 MB). |
-| `APPROVAL_REQUIRED_TOOLS`, `APPROVAL_REJECTION_POLICY` | Extra approval rules; `skip` or `fail` on rejection. |
-| `ENABLE_MONITOR_SCHEDULER`, `MONITOR_POLL_SECONDS`, `MONITOR_MIN_INTERVAL_MINUTES` | Monitoring mode. |
-| `DOT_LAB_API_KEY` | If set, `/api/*` (except `/api/health`) requires header `X-API-Key`. |
-
-See `.env.example` for every option.
-
-## Try it on Kaggle
-
-A step-by-step [walkthrough notebook on Kaggle](https://www.kaggle.com/code/anju004/dot-lab-always-on-ai-agent-walkthrough) installs Dot Lab, runs the test suite and shows one full agent run (plan → tools → approval pause → resume → result) without needing an API key.
-
-## Running locally
-
-```bash
+cp .env.example .env               # then set OPENAI_API_KEY and OPENAI_MODEL
+python examples/seed_demo_data.py  # optional: demo sales data for the data tools
 uvicorn app.main:app --reload
 ```
 
-Open <http://127.0.0.1:8000> for the dashboard and <http://127.0.0.1:8000/docs> for the interactive API docs.
+Open <http://127.0.0.1:8000> for the dashboard and <http://127.0.0.1:8000/docs> for the API reference. Dot Lab does not hard-code a model name: choose one from the [OpenAI models page](https://platform.openai.com/docs/models) and the Settings page tells you whether it is available to your key.
 
-## Creating your first task
+Try these goals in the **AI Workspace**:
 
-From the dashboard: type a goal in **New task** and press **Start task**. The task detail drawer opens and updates live.
+> Which branch had the highest revenue in demo/demo_sales.csv?
+>
+> Now save a short report about the top 3 branches.
+>
+> Summarise the monthly gross profit trend in demo/demo_sales.csv.
 
-From the command line:
+No API key yet? The [Kaggle walkthrough notebook](https://www.kaggle.com/code/anju004/dot-lab-always-on-ai-agent-walkthrough) installs Dot Lab, runs the tests and shows a full agent run with a scripted model.
 
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"goal": "Research the latest developments in AI agents and create a summary."}'
-```
-
-```json
-{
-  "task_id": "3f0c9c7e5b8a4c1f9a1e2d3c4b5a6978",
-  "goal": "Research the latest developments in AI agents and create a summary.",
-  "status": "PENDING",
-  "created_at": "2026-10-07T09:12:44.501Z"
-}
-```
-
-Follow it:
-
-```bash
-curl -s http://127.0.0.1:8000/api/tasks/<task_id>          # full detail
-curl -s http://127.0.0.1:8000/api/tasks                    # list (add ?status=RUNNING)
-curl -s http://127.0.0.1:8000/api/overview                 # counts
-curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/pause
-curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/resume
-curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/cancel
-```
-
-Statuses: `PENDING`, `PLANNING`, `WAITING_INPUT`, `RUNNING`, `WAITING_APPROVAL`, `REVIEWING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED`. See [docs/architecture.md](docs/architecture.md) for the full lifecycle.
-
-Or run the examples in-process (no server needed):
-
-```bash
-python examples/simple_task.py        # calculator + file system
-python examples/research_agent.py     # search/browse + summary + saved report
-python examples/monitoring_agent.py --cycles 2 --pause 60
-```
-
-### Example workflow
-
-1. You submit *"Research the latest developments in AI agents, summarise them, and post the summary to our team webhook."*
-2. Status `PLANNING`: the planner returns e.g. `web_search` → `browser` → `browser` → *compare findings* (reasoning) → *write summary* (reasoning) → `notification` (webhook, `requires_approval: true`).
-3. Status `RUNNING`: each step runs; tool calls, results and observations appear in the task drawer.
-4. Before the webhook step the task becomes `WAITING_APPROVAL` and the dashboard shows **Agent is waiting for your approval** with the action, reason, the agent's explanation and the exact payload.
-5. You press **Approve** (or **Reject**). The task resumes and sends exactly what you approved (or skips that step).
-6. Status `REVIEWING`: the reviewer checks the goal is satisfied and the task becomes `COMPLETED` with the final summary (or `FAILED` with the partial result if it is not). Plan and history are kept; useful observations and the final result go to memory.
-
-### Data analysis example
-
-```bash
-python examples/seed_demo_data.py   # copies demo_sales.csv into the workspace
-```
-
-Then create a task such as:
-
-> Analyse demo/demo_sales.csv: rank branches by gross profit, show the monthly revenue trend, and save a short report.
-
-A typical plan is `data_summary` (trend + branch ranking) → *write findings* (reasoning) → `report_generator`. The report appears in `data/workspace/reports/`. The demo data is synthetic (8 branches × 8 categories, January–June 2026), generated with [retail-analytics-toolkit](https://github.com/Anjub004/retail-analytics-toolkit) (MIT).
-
-To let the agent only read and analyse data (no file writes, no internet), set `TOOL_PERMISSION_LEVEL=read`.
-
-### Conversations and memory
-
-```bash
-# Start a conversation; each message becomes a task with the earlier messages as context
-curl -s -X POST http://127.0.0.1:8000/api/conversations -H "Content-Type: application/json" -d '{}'
-curl -s -X POST http://127.0.0.1:8000/api/conversations/<id>/messages \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Total revenue by branch for May in demo/demo_sales.csv"}'
-curl -s -X POST http://127.0.0.1:8000/api/conversations/<id>/messages \
-  -H "Content-Type: application/json" -d '{"content": "Now the same for June"}'
-curl -s http://127.0.0.1:8000/api/conversations/<id>     # messages, including the replies
-
-# Long-term memory
-curl -s -X POST http://127.0.0.1:8000/api/memory -H "Content-Type: application/json" \
-  -d '{"content": "Gross profit in reports excludes VAT", "category": "finance"}'
-curl -s "http://127.0.0.1:8000/api/memory?category=finance"
-curl -s http://127.0.0.1:8000/api/memory/categories
-curl -s -X PATCH http://127.0.0.1:8000/api/memory/<id> -H "Content-Type: application/json" \
-  -d '{"category": "accounting"}'
-curl -s -X DELETE http://127.0.0.1:8000/api/memory/<id>
-```
-
-Deleting a conversation removes its messages but keeps its tasks and their history.
-
-## Monitoring
-
-Create a monitor in the dashboard or via the API:
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/monitors \
-  -H "Content-Type: application/json" \
-  -d '{"name": "AI News Monitor", "goal": "Monitor meaningful developments in AI agents", "interval_minutes": 360}'
-```
-
-Every cycle the monitor: wakes up → runs the goal as a normal task → when it completes, compares the result with the previous one using the LLM → creates a dashboard notification **only** if there is a meaningful change → saves the result as the new baseline → sleeps until the next run. The first run only captures a baseline.
-
-Other endpoints: `GET /api/monitors`, `POST /api/monitors/{id}/run`, `POST /api/monitors/{id}/enable|disable`, `DELETE /api/monitors/{id}`, `GET /api/notifications`.
-
-V1 limitation: the scheduler is a single asyncio loop in the API process. Run one instance per database.
-
-## Clarification questions
-
-When essential information is missing and a wrong guess would waste the task (which file? which month?), the planner asks **one** question instead of guessing. The task becomes `WAITING_INPUT`; the dashboard shows **Agent has a question for you** with an answer box.
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/answer \
-  -H "Content-Type: application/json" -d '{"answer": "June 2026"}'
-```
-
-In a conversation, simply send the answer as the next message. The answer is added to the goal for every module (planner, executor, reviewer). A task can ask at most two questions; after that the planner must plan with stated assumptions.
-
-## Task reports
-
-Every task can be downloaded as a Markdown report (goal, clarifications, result, plan, tool calls, approvals, token usage, timeline). Use **Download report** in the task drawer, or:
-
-```bash
-curl -s -OJ http://127.0.0.1:8000/api/tasks/<task_id>/report        # download
-curl -s "http://127.0.0.1:8000/api/tasks/<task_id>/report?download=false"   # view
-```
-
-Tool outputs in the report are shortened to 800 characters.
-
-## Human approval
-
-An approval is requested when **any** of these is true:
-
-- the tool says the specific call is sensitive (webhook notifications; overwriting an existing workspace file),
-- the tool is listed in `APPROVAL_REQUIRED_TOOLS`,
-- the planner marked the step `requires_approval`.
-
-The agent records the action, reason, its own explanation and the exact tool input, sets `WAITING_APPROVAL`, and stops. Nothing runs until a human decides:
-
-```bash
-curl -s http://127.0.0.1:8000/api/approvals                       # pending
-curl -s -X POST http://127.0.0.1:8000/api/approvals/<id>/approve
-curl -s -X POST http://127.0.0.1:8000/api/approvals/<id>/reject \
-  -H "Content-Type: application/json" -d '{"note": "Do not post externally"}'
-```
-
-On approval the stored input is executed as-is (never regenerated). On rejection the step is skipped (`APPROVAL_REJECTION_POLICY=skip`, default) or the task fails (`fail`). Each approval can be used once.
-
-## Security
-
-Summary (details and known limitations in [SECURITY.md](SECURITY.md)):
-
-- Secrets only from environment variables; wrapped in `SecretStr`; redacted from logs; `.env` is git-ignored.
-- File system tool is confined to `data/workspace` (rejects absolute paths, `..`, drive letters, null bytes and symlink escapes).
-- Browser is read-only, `http(s)` only, blocks private/loopback/link-local/metadata IPs (re-checked on every redirect), caps response size, optional domain allow-list.
-- No shell command execution and no arbitrary code execution (the calculator uses a whitelisted AST evaluator; the data tools accept structured parameters only, never pandas `query`/`eval` strings).
-- Tool permission levels (`read` / `write` / `external`) with `TOOL_PERMISSION_LEVEL`; tools that do not declare a level are treated as `external`.
-- Approval gates for external communication and overwrites.
-- Input validation on every API request and every tool call; limits on iterations, plan size, retries, re-planning, tool time and task time.
-- Optional `DOT_LAB_API_KEY` for the API. Docker Compose binds to `127.0.0.1` by default.
-
-Treat everything the agent reads from the web as untrusted. Prompt injection is a known, unsolved risk for all LLM agents.
-
-## Testing
-
-```bash
-pytest
-ruff check . && ruff format --check .
-```
-
-The suite runs **offline**: the LLM is replaced by a scripted fake, the OpenAI SDK wrapper is exercised against a mocked HTTP transport, and search/browser/webhook use `httpx.MockTransport`. No API key is needed.
-
-**Live tests** run the real agent against the real OpenAI API (model check, a calculator task, and a CSV analysis of the demo data). They are skipped by default and in CI. Run them with your own key (in `.env` or the environment); they make about 10-20 model calls:
-
-```bash
-pytest -m live -v
-```
-
-**Dashboard browser test** (optional, not in CI): clicks through all 8 sections in a real Chromium with the fake LLM and fails on any JavaScript error.
-
-```bash
-pip install playwright && playwright install chromium
-python scripts/ui_smoke_test.py --screenshots ./screenshots
-```
-
-## Docker
+### Docker
 
 ```bash
 cp .env.example .env        # add OPENAI_API_KEY and OPENAI_MODEL
 docker compose up --build
 ```
 
-The dashboard is at <http://127.0.0.1:8000>. Data (SQLite DB and workspace) is stored in `./data` on the host. The container runs as a non-root user (UID 1000); if your host user has a different UID, make `./data` writable for it (e.g. `sudo chown -R 1000:1000 data`). `env_file` with `required: false` needs Docker Compose v2.24+; on older versions create `.env` first.
+The dashboard is at <http://127.0.0.1:8000> (bound to localhost only). Data is stored in `./data` on the host. The container runs as a non-root user (UID 1000); if your host user has a different UID, make `./data` writable for it (e.g. `sudo chown -R 1000:1000 data`). Docker Compose v2.24+ is needed for the optional `.env`; on older versions create `.env` first.
 
-## Roadmap
+## How it works
 
-**V1 (this release)**
-- Goal execution
-- Planning
-- Tools
-- Memory
-- Approvals
-- Dashboard
+```mermaid
+flowchart TD
+    User([You]) -->|goal or chat message| Dashboard[Dashboard]
+    User -->|REST| API
+    Dashboard --> API[FastAPI]
+    API --> Runner[Background runner]
+    Scheduler[Monitor scheduler] --> Runner
+    Runner --> Agent
 
-**V2**
-- Better long-term memory (embeddings / vector store behind the same `MemoryStore` interface)
-- More tools
-- Durable task queues (Celery / RQ / Arq) replacing the asyncio runner
-- Better scheduling
-- Agent evaluation (benchmarks, regression suites)
-- Multi-agent experiments
+    subgraph Agent[Agent loop]
+        Planner -->|plan or question| Executor
+        Executor --> Evaluator[Step evaluator]
+        Evaluator -->|continue / retry / finish| Executor
+        Evaluator --> Reviewer[Goal reviewer]
+        Reviewer -->|more steps| Executor
+    end
 
-**V3**
-- Distributed execution
-- More advanced observability (tracing, metrics)
-- Pluggable model providers
+    Agent --> LLM[OpenAI Responses API<br/>Structured Outputs]
+    Agent --> Approvals[Approvals and questions]
+    Approvals --> Dashboard
+    Executor --> Tools
 
-## Known V1 simplifications
+    subgraph Tools[Tools by permission level]
+        Read[read: calculator, CSV analyzer, data summary]
+        Write[write: file system, report generator]
+        External[external: web search, browser, notifications]
+    end
 
-- Background execution uses asyncio inside the API process. It is not durable; interrupted tasks are re-queued on restart and an interrupted step may run again. Use a durable queue in production.
-- SQLite with synchronous SQLAlchemy calls from async code; fine for a single local user, not for high concurrency.
-- `TASK_TIMEOUT_SECONDS` applies to each run segment; time spent waiting for approval or paused is not counted.
-- Memory search is keyword-based, not semantic.
-- Migrations are tested on SQLite only.
-- Budgets are checked before each LLM call, so a task can exceed its limit by at most one call. Monitor change-comparison calls run outside a task and are not counted.
-- No user accounts; a single shared optional API key.
-- An LLM error fails the task (after the SDK's own retries) rather than attempting recovery.
+    Agent --> DB[(SQLite: tasks, events, memory,<br/>conversations, token usage)]
+    Tools --> Workspace[(Workspace folder)]
+    DB --> Dashboard
+```
+
+1. **Plan**: the planner turns the goal (plus relevant memory and the conversation) into validated steps, or asks one question if essential information is missing.
+2. **Act**: each step runs a tool with validated arguments, or a reasoning step. Sensitive steps wait for your approval.
+3. **Evaluate**: each result is checked; the agent continues, retries, finishes early or stops.
+4. **Review**: the reviewer decides whether the goal is satisfied, can add a bounded number of steps, and writes the final result.
+5. **Remember**: results and useful observations go to long-term memory; the full history stays in the task log.
+
+All state lives in SQLite, so a task can resume after an approval, a question, a pause or a restart. Details: [docs/architecture.md](docs/architecture.md).
+
+## Documentation
+
+| Guide | Contents |
+|---|---|
+| [Usage](docs/usage.md) | Tasks, conversations, memory, questions, approvals, reports and monitoring, with `curl` examples |
+| [Configuration](docs/configuration.md) | Every setting, defaults and recommended profiles |
+| [Architecture](docs/architecture.md) | Components, task lifecycle, memory design, migrations, dashboard |
+| [Security](SECURITY.md) | Threat model, protections, known limitations, reporting vulnerabilities |
+| [Roadmap](docs/roadmap.md) | Ideas for future versions and known limitations of 1.0 |
+| [Contributing](CONTRIBUTING.md) | Development setup, checks, adding tools, migrations, pull requests |
+| [Changelog](CHANGELOG.md) | What changed in each release |
+
+## Security at a glance
+
+- No shell commands and no arbitrary code execution; the data tools take structured parameters, never code.
+- File access is confined to the workspace folder; the browser is read-only and blocks private networks.
+- Tool permission levels, approval gates, and limits on iterations, steps, retries, time, tokens and cost.
+- Secrets only from environment variables, redacted from logs, never sent to the dashboard.
+
+Prompt injection from web content is a known, unsolved risk for all LLM agents. Keep approvals on and review results. See [SECURITY.md](SECURITY.md).
+
+## Testing
+
+```bash
+pip install -r requirements.txt
+ruff check . && ruff format --check .
+pytest                     # offline: scripted fake LLM and mocked HTTP, no API key needed
+pytest -m live -v          # optional: real OpenAI API with your key (about 10-20 calls)
+```
+
+The dashboard has an optional browser test that clicks through every section and checks the phone layout: `python scripts/ui_smoke_test.py` (needs `pip install playwright && playwright install chromium`). CI runs lint and the offline suite on Python 3.12 and 3.13, and builds and starts the Docker image.
+
+## Project structure
+
+```text
+dot-lab/
+├── app/
+│   ├── agent/        # agent loop, planner, executor, evaluator, LLM client, budgets
+│   ├── api/          # FastAPI routes (tasks, conversations, memory, approvals, reports, ...)
+│   ├── tools/        # tools and the permission-aware tool registry
+│   ├── memory/       # long-term memory store
+│   ├── services/     # task service, background runner, monitoring, conversations, reports
+│   ├── database/     # SQLAlchemy models and Alembic migrations
+│   └── approvals/    # approval manager
+├── dashboard/        # HTML, CSS and plain JavaScript (no build step)
+├── examples/         # runnable examples and demo sales data
+├── scripts/          # browser smoke test and screenshot generator
+├── tests/            # offline pytest suite (+ opt-in live tests)
+└── docs/             # guides and screenshots
+```
+
+## Contributing
+
+Contributions are welcome, from typo fixes to new tools. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md), and use the [issue templates](https://github.com/Anjub004/dot-lab/issues/new/choose) for bugs and ideas.
+
+## Acknowledgements
+
+The demo sales data is synthetic, generated with [retail-analytics-toolkit](https://github.com/Anjub004/retail-analytics-toolkit) (MIT).
 
 ## Disclaimer
 
-Dot Lab is an experimental, independent, open-source project for education and research. It is **not affiliated with, endorsed by, or an implementation of OpenAI Dots**, and it does not use OpenAI branding or proprietary assets. It uses the public OpenAI API as one model provider. Autonomous agents can make mistakes, misread sources and be manipulated by malicious content: review results, keep approvals enabled, and do not give it access to anything you cannot afford to lose. Provided under the MIT License, without warranty.
+Dot Lab is an experimental, independent, open-source project for education and research. It is **not affiliated with, endorsed by, or an implementation of OpenAI Dots**, and it does not use OpenAI branding or proprietary assets. It uses the public OpenAI API as one model provider. Autonomous agents can make mistakes, misread sources and be manipulated by malicious content: review results, keep approvals enabled, and do not give it access to anything you cannot afford to lose.
+
+## License
+
+[MIT](LICENSE) © 2026 Dot Lab contributors

@@ -1,0 +1,24 @@
+# Keep secrets, local data and development files out of the build context.
+.env
+.env.*
+!.env.example
+data/
+.git/
+.github/
+.venv/
+venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+tests/
+scripts/
+docs/
+screenshots/
+.vscode/
+.idea/
+.DS_Store

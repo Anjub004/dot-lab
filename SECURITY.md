@@ -2,11 +2,28 @@
 
 Dot Lab is an **experimental** agent. It is designed to be safe to run on your own machine for experimentation, not to be exposed to the internet or used with sensitive data. This document explains the protections that exist, and — just as importantly — their limits.
 
+## Supported versions
+
+| Version | Supported |
+|---|---|
+| 1.x | Yes |
+| < 1.0 | No (pre-release milestones) |
+
 ## Reporting a vulnerability
 
-Please do not open a public issue for security problems. Use GitHub's private vulnerability reporting ("Security" tab → "Report a vulnerability") on the repository, with steps to reproduce. We aim to acknowledge reports within a week.
+Please do not open a public issue for security problems. Use GitHub's [private vulnerability reporting](https://github.com/Anjub004/dot-lab/security/advisories/new) ("Security" tab → "Report a vulnerability") with:
 
-## Threat model (V1)
+- what an attacker can do, and under which configuration,
+- steps or a minimal goal / request to reproduce,
+- the Dot Lab version (`GET /api/settings` or the dashboard's Settings page).
+
+We aim to acknowledge reports within a week and to publish a fix and an advisory for confirmed issues. Please never include real API keys or personal data in a report.
+
+**In scope:** escaping the workspace, reaching private networks through the browser, running code or shell commands, bypassing approvals or tool permission levels, leaking secrets through the API, logs or dashboard, and bypassing `DOT_LAB_API_KEY`.
+
+**Out of scope:** the model giving wrong answers, prompt injection that stays within the documented limits below, and denial of service on a server you exposed publicly against this advice.
+
+## Threat model (1.x)
 
 - One trusted operator runs Dot Lab locally (or on a private network).
 - The LLM and every web page it reads are **untrusted**: they may produce wrong or malicious instructions (prompt injection).
@@ -29,6 +46,20 @@ Please do not open a public issue for security problems. Use GitHub's private vu
 - Rejects absolute paths (POSIX and Windows), `~`, drive letters, any `..` component, and null bytes; the final resolved path (after following symlinks) must be inside the workspace.
 - Size limits on read and write; UTF-8 text only; writes are atomic.
 - Overwriting an existing file requires human approval. There is no delete operation.
+
+### Data and report tools
+- `csv_analyzer` and `data_summary` read `.csv` files inside the workspace only (same path rules as the file system tool), up to `CSV_MAX_BYTES`, with pandas in a worker thread under the tool timeout.
+- They take structured parameters (columns, metrics, filters with fixed operators). Column names are checked against the file; no pandas `query`/`eval` strings and no formulas are evaluated.
+- `report_generator` writes Markdown only into `reports/` inside the workspace, with a validated file name; overwriting an existing report requires approval.
+- Dashboard downloads of reports use a strict name pattern, so no other file can be served.
+
+### Tool permission levels
+- Every tool declares `read`, `write` or `external`; a tool that declares nothing is treated as `external`.
+- `TOOL_PERMISSION_LEVEL` hides tools above the level from the planner **and** blocks them at execution time, so a model that names a hidden tool still cannot run it.
+
+### Dashboard
+- All server data is HTML-escaped before rendering; no inline event handlers built from data.
+- The optional API key is kept in the browser's `localStorage` and sent as a header, never in URLs.
 
 ### Browser tool
 - Read-only: no clicking, typing, form submission, downloads, cookies or logins.

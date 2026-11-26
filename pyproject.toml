@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dot-lab"
-version = "0.1.0"
+version = "1.0.0"
 description = "An experimental always-on AI agent that plans, uses tools, maintains memory, executes multi-step tasks, and requests human approval when needed."
 readme = "README.md"
 license = { text = "MIT" }

@@ -1,5 +1,10 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="Dot Lab" \
+      org.opencontainers.image.description="Experimental always-on AI agent workspace" \
+      org.opencontainers.image.source="https://github.com/Anjub004/dot-lab" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -7,13 +12,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Runtime dependencies only (no test or lint tools), read from pyproject.toml.
+COPY pyproject.toml .
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" > /tmp/requirements.txt \
+    && pip install -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
 COPY app ./app
 COPY dashboard ./dashboard
 COPY examples ./examples
-COPY pyproject.toml README.md alembic.ini ./
+COPY README.md LICENSE alembic.ini .env.example ./
 
 # Run as an unprivileged user; data/ is the only writable directory.
 RUN useradd --create-home --uid 1000 dotlab \
