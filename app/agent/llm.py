@@ -19,6 +19,8 @@ import openai
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
+from app.agent.usage import current_budget
+
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
@@ -113,6 +115,9 @@ class OpenAILLM:
         return ModelCheck(status="available", detail=f"Model '{self.model}' is available.")
 
     async def generate(self, *, system: str, prompt: str, schema: type[SchemaT]) -> SchemaT:
+        budget = current_budget()
+        if budget is not None:
+            budget.check()  # raises BudgetExceededError before spending more tokens
         try:
             response = await self._client.responses.parse(
                 model=self.model,
@@ -136,6 +141,15 @@ class OpenAILLM:
             raise LLMError(f"OpenAI API error: {type(exc).__name__}") from exc
         except ValidationError as exc:
             raise LLMError("Model output did not match the expected schema") from exc
+
+        usage = getattr(response, "usage", None)
+        if budget is not None and usage is not None:
+            budget.record(
+                model=self.model,
+                purpose=schema.__name__,
+                input_tokens=int(usage.input_tokens or 0),
+                output_tokens=int(usage.output_tokens or 0),
+            )
 
         parsed = response.output_parsed
         if parsed is None:
