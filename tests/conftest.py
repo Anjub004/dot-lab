@@ -8,6 +8,10 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+# Real credentials, captured before the offline isolation below. Only the opt-in
+# live tests (pytest -m live) use them; see tests/live/.
+LIVE_CREDENTIALS = {k: os.environ.get(k, "") for k in ("OPENAI_API_KEY", "OPENAI_MODEL")}
+
 # Isolate the module-level app in app.main from any developer .env / database.
 _TMP = Path(tempfile.mkdtemp(prefix="dotlab-tests-"))
 os.environ.update(
@@ -50,6 +54,7 @@ class ScriptedLLM:
             k: list(v) for k, v in (script or {}).items()
         }
         self.calls: list[tuple[type[BaseModel], str]] = []
+        self.systems: list[tuple[type[BaseModel], str]] = []  # system instructions per call
         # (input_tokens, output_tokens) reported per call, like the real client.
         self.usage_per_call: tuple[int, int] | None = None
 
@@ -65,6 +70,7 @@ class ScriptedLLM:
         if budget is not None:
             budget.check()  # same contract as OpenAILLM
         self.calls.append((schema, prompt))
+        self.systems.append((schema, system))
         if budget is not None and self.usage_per_call is not None:
             budget.record(
                 model="scripted",
@@ -91,7 +97,12 @@ def plan(*steps: tuple[str, str | None, bool]) -> PlannerOutput:
     return PlannerOutput(
         summary="test plan",
         steps=[PlannedStep(description=d, tool=t, requires_approval=a) for d, t, a in steps],
+        clarification_question=None,
     )
+
+
+def question(text: str) -> PlannerOutput:
+    return PlannerOutput(summary="need input", steps=[], clarification_question=text)
 
 
 def args(json_text: str) -> ToolArguments:
