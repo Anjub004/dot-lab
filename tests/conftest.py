@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from app.agent.evaluator import GoalEvaluation, StepEvaluation
 from app.agent.executor import ToolArguments
 from app.agent.planner import PlannedStep, PlannerOutput
+from app.agent.usage import current_budget
 from app.config import Settings
 from app.context import AppContext, build_context
 
@@ -49,6 +50,8 @@ class ScriptedLLM:
             k: list(v) for k, v in (script or {}).items()
         }
         self.calls: list[tuple[type[BaseModel], str]] = []
+        # (input_tokens, output_tokens) reported per call, like the real client.
+        self.usage_per_call: tuple[int, int] | None = None
 
     @property
     def is_configured(self) -> bool:
@@ -58,7 +61,17 @@ class ScriptedLLM:
         self.script.setdefault(schema, []).extend(responses)
 
     async def generate(self, *, system: str, prompt: str, schema: type[Any]) -> Any:
+        budget = current_budget()
+        if budget is not None:
+            budget.check()  # same contract as OpenAILLM
         self.calls.append((schema, prompt))
+        if budget is not None and self.usage_per_call is not None:
+            budget.record(
+                model="scripted",
+                purpose=schema.__name__,
+                input_tokens=self.usage_per_call[0],
+                output_tokens=self.usage_per_call[1],
+            )
         queue = self.script.get(schema)
         if not queue:
             raise AssertionError(f"ScriptedLLM has no response for {schema.__name__}")
