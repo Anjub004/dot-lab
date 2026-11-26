@@ -29,6 +29,12 @@ class TaskRow(Base):
     monitor_id: Mapped[str | None] = mapped_column(
         String(32), ForeignKey("monitors.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    conversation_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
@@ -97,9 +103,13 @@ class MemoryRow(Base):
         String(32), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True, index=True
     )
     kind: Mapped[str] = mapped_column(String(32), index=True)
+    category: Mapped[str] = mapped_column(
+        String(50), index=True, default="general", server_default="general"
+    )
     content: Mapped[str] = mapped_column(Text)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
 class LlmUsageRow(Base):
@@ -115,6 +125,32 @@ class LlmUsageRow(Base):
     purpose: Mapped[str] = mapped_column(String(64))  # e.g. PlannerOutput, StepEvaluation
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ConversationRow(Base):
+    """A chat thread: short-term context shared by the tasks started from it."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    title: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ConversationMessageRow(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))  # user / assistant
+    content: Mapped[str] = mapped_column(Text)
+    task_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
