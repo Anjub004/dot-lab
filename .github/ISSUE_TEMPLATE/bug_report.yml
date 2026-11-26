@@ -1,0 +1,58 @@
+name: Bug report
+description: Something does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Do not include API keys, tokens or personal data.**
+        For security problems, use private vulnerability reporting instead (see SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The goal you gave the agent, the API request, or the dashboard steps.
+      placeholder: |
+        1. Start Dot Lab with TOOL_PERMISSION_LEVEL=read
+        2. Create the task "..."
+        3. The task fails with "..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or task report
+      description: Relevant log lines or the task's Markdown report (Download report in the task drawer). Remove anything sensitive.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Dot Lab version
+      description: Shown in the dashboard's Settings page.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options:
+        - Local Python (uvicorn)
+        - Docker / Docker Compose
+        - Kaggle / notebook
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, browser (for dashboard issues). The model name helps too.
+      placeholder: "Ubuntu 24.04, Python 3.12.7, Chrome 131"
