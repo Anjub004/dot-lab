@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.agent.llm import ModelCheck
 from app.agent.state import Plan, TaskStatus
 from app.approvals.manager import Approval
 from app.memory.models import MemoryRecord
@@ -107,5 +108,6 @@ class Overview(BaseModel):
 class Health(BaseModel):
     status: str
     llm_configured: bool
+    model_check: ModelCheck
     search_provider: str
     tools: list[dict[str, Any]]
