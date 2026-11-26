@@ -38,6 +38,7 @@ def overview(ctx: AppContext = Depends(get_ctx)) -> Overview:
         active_tasks=active,
         completed_tasks=counts[TaskStatus.COMPLETED],
         waiting_approvals=ctx.approvals.count_pending(),
+        waiting_input=counts[TaskStatus.WAITING_INPUT],
         failed_tasks=counts[TaskStatus.FAILED],
         paused_tasks=counts[TaskStatus.PAUSED],
         monitoring_jobs=sum(1 for m in ctx.monitors.list() if m.enabled),
