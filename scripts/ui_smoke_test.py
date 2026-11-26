@@ -223,10 +223,22 @@ def run(page: Page, llm: ScriptedLLM, workspace: Path, shots: Path | None) -> No
     page.mouse.click(370, 600)  # tap outside the menu
     expect(page.locator("#sidebar")).to_have_class("sidebar")
     page.wait_for_timeout(400)  # let the slide-out animation finish before the screenshot
-    width = page.evaluate("document.documentElement.scrollWidth")
-    assert width <= 390, f"horizontal scroll on mobile ({width}px)"
     shot("09-mobile-workspace")
-    step("mobile: menu opens, navigation works, no horizontal scroll")
+    # Long, realistic goals used to push panels wider than the phone screen.
+    script(llm)
+    long_goal = "Which branch had the highest revenue in demo/demo_sales.csv and by how much?"
+    created = page.request.post(f"{BASE}/api/tasks", data={"goal": long_goal})
+    assert created.ok, created.text()
+    page.wait_for_timeout(1500)
+    for section in (
+        "overview", "workspace", "tasks", "history", "activity",
+        "memory", "reports", "settings", "monitors",
+    ):  # fmt: skip
+        page.goto(f"{BASE}/#{section}")
+        page.wait_for_timeout(500)
+        width = page.evaluate("document.documentElement.scrollWidth")
+        assert width <= 390, f"horizontal scroll on mobile in {section} ({width}px)"
+    step("mobile: menu opens, navigation works, no horizontal scroll in any section")
 
 
 def main() -> int:
