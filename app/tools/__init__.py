@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.config import Settings
 from app.tools.base import (
     BaseTool,
+    PermissionLevel,
     ToolConfigurationError,
     ToolContext,
     ToolError,
@@ -14,13 +15,16 @@ from app.tools.base import (
 )
 from app.tools.browser import BrowserTool, UrlPolicy, build_browser_backend
 from app.tools.calculator import CalculatorTool
+from app.tools.csv_analyzer import CsvAnalyzerTool
+from app.tools.data_summary import DataSummaryTool
 from app.tools.filesystem import FileSystemTool
 from app.tools.notifications import NotificationStore, NotificationTool, WebhookSender
+from app.tools.report_generator import ReportGeneratorTool
 from app.tools.web_search import WebSearchTool, build_search_provider
 
 
 def build_default_registry(settings: Settings, notifications: NotificationStore) -> ToolRegistry:
-    """Create the registry with the five built-in V1 tools."""
+    """Create the registry with the built-in tools, limited by TOOL_PERMISSION_LEVEL."""
     search_key = settings.search_api_key.get_secret_value() if settings.search_api_key else None
     webhook = (
         settings.notification_webhook_url.get_secret_value()
@@ -44,12 +48,17 @@ def build_default_registry(settings: Settings, notifications: NotificationStore)
             BrowserTool(browser_backend, max_chars=settings.browser_max_chars),
             FileSystemTool(settings.workspace_dir, max_bytes=settings.max_file_bytes),
             NotificationTool(notifications, WebhookSender(webhook)),
-        ]
+            CsvAnalyzerTool(settings.workspace_dir, max_bytes=settings.csv_max_bytes),
+            DataSummaryTool(settings.workspace_dir, max_bytes=settings.csv_max_bytes),
+            ReportGeneratorTool(settings.workspace_dir, max_bytes=settings.max_file_bytes),
+        ],
+        max_permission=PermissionLevel(settings.tool_permission_level),
     )
 
 
 __all__ = [
     "BaseTool",
+    "PermissionLevel",
     "ToolConfigurationError",
     "ToolContext",
     "ToolError",

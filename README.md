@@ -91,7 +91,9 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 
 - **Goal → plan → act → evaluate** loop with iteration limit, task timeout, per-tool timeout, bounded retries and bounded re-planning.
 - **Structured outputs** everywhere the LLM is used (planner, tool arguments, step evaluation, goal evaluation, monitor comparison) via `client.responses.parse(text_format=...)`.
-- **Modular tools** behind a common `BaseTool` interface: calculator (safe AST evaluator), web search (pluggable providers), read-only browser (SSRF-protected), sandboxed file system, notifications (dashboard + webhook).
+- **Modular tools** behind a common `BaseTool` interface: calculator (safe AST evaluator), web search (pluggable providers), read-only browser (SSRF-protected), sandboxed file system, notifications (dashboard + webhook), and data tools (see below).
+- **Data analysis tools** (pandas, workspace CSV files only): `csv_analyzer` (profile / aggregate / top rows with safe structured filters), `data_summary` (totals, day/week/month trend with partial periods flagged, top/bottom ranking with share %), `report_generator` (saves a Markdown report to `reports/`).
+- **Tool permission levels**: every tool is `read`, `write` or `external`. `TOOL_PERMISSION_LEVEL` hides and blocks every tool above the chosen level. Tools can also set their own shorter timeout.
 - **Human-in-the-loop approvals**: webhook messages, file overwrites, steps the planner marks sensitive, and any tool listed in `APPROVAL_REQUIRED_TOOLS`. The approved input is executed exactly — it is never regenerated.
 - **Persistent memory** (`save` / `retrieve` / `search` / `delete`) in SQLite with keyword search; relevant memories from earlier tasks are given to the planner. Long-term memory holds only reviewer observations and final results; goals, plans and raw tool output stay in the execution log.
 - **Honest reviewer**: a task is `COMPLETED` only when the reviewer confirms the goal is satisfied; otherwise it is `FAILED` with the partial result kept.
@@ -106,7 +108,7 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 
 ## Tech stack
 
-Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 + SQLite, OpenAI Python SDK (Responses API), httpx, python-dotenv, asyncio, pytest, Ruff. Frontend: plain HTML, CSS and JavaScript (no build step).
+Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 + SQLite, OpenAI Python SDK (Responses API), httpx, pandas, python-dotenv, asyncio, pytest, Ruff. Frontend: plain HTML, CSS and JavaScript (no build step).
 
 ## Project structure
 
@@ -123,12 +125,14 @@ dot-lab/
 │   │                        # evaluator.py, state.py, llm.py
 │   ├── memory/              # memory.py (MemoryStore + SQLite impl), models.py
 │   ├── tools/               # base.py, calculator.py, web_search.py, browser.py,
-│   │                        # filesystem.py, notifications.py
+│   │                        # filesystem.py, notifications.py, csv_analyzer.py,
+│   │                        # data_summary.py, report_generator.py, data_common.py
 │   ├── approvals/           # manager.py
 │   ├── database/            # database.py (engine/session), models.py (tables)
 │   └── services/            # task_service.py, runner.py (background), monitoring.py
 ├── dashboard/               # index.html, styles.css, app.js
-├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py
+├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py,
+│                            # seed_demo_data.py, data/demo_sales.csv
 ├── tests/                   # offline pytest suite with a scripted fake LLM
 ├── docs/                    # architecture.md (components, lifecycle, memory design)
 ├── .github/workflows/ci.yml # lint + tests on every push
@@ -180,6 +184,8 @@ SEARCH_API_KEY=...
 | `MAX_AGENT_ITERATIONS`, `MAX_PLAN_STEPS`, `MAX_STEP_RETRIES`, `MAX_REPLANS`, `TOOL_TIMEOUT_SECONDS`, `TASK_TIMEOUT_SECONDS`, `MAX_CONCURRENT_TASKS` | Safety limits. |
 | `MAX_TASK_TOKENS` | Token budget per task (input + output, all runs of the task). Default `200000`; `0` = no limit. |
 | `MAX_TASK_COST_USD`, `OPENAI_INPUT_COST_PER_1M`, `OPENAI_OUTPUT_COST_PER_1M` | Optional cost budget. Copy your model's prices (USD per 1M tokens) from the OpenAI pricing page; cost is an estimate, not your bill. |
+| `TOOL_PERMISSION_LEVEL` | Highest tool permission the agent may use: `read` (calculator, CSV tools), `write` (+ file system, report generator) or `external` (default: + web search, browser, notifications). |
+| `CSV_MAX_BYTES` | Largest CSV the data tools will read. Default `20000000` (20 MB). |
 | `APPROVAL_REQUIRED_TOOLS`, `APPROVAL_REJECTION_POLICY` | Extra approval rules; `skip` or `fail` on rejection. |
 | `ENABLE_MONITOR_SCHEDULER`, `MONITOR_POLL_SECONDS`, `MONITOR_MIN_INTERVAL_MINUTES` | Monitoring mode. |
 | `DOT_LAB_API_KEY` | If set, `/api/*` (except `/api/health`) requires header `X-API-Key`. |
@@ -249,6 +255,20 @@ python examples/monitoring_agent.py --cycles 2 --pause 60
 5. You press **Approve** (or **Reject**). The task resumes and sends exactly what you approved (or skips that step).
 6. Status `REVIEWING`: the reviewer checks the goal is satisfied and the task becomes `COMPLETED` with the final summary (or `FAILED` with the partial result if it is not). Plan and history are kept; useful observations and the final result go to memory.
 
+### Data analysis example
+
+```bash
+python examples/seed_demo_data.py   # copies demo_sales.csv into the workspace
+```
+
+Then create a task such as:
+
+> Analyse demo/demo_sales.csv: rank branches by gross profit, show the monthly revenue trend, and save a short report.
+
+A typical plan is `data_summary` (trend + branch ranking) → *write findings* (reasoning) → `report_generator`. The report appears in `data/workspace/reports/`. The demo data is synthetic (8 branches × 8 categories, January–June 2026), generated with [retail-analytics-toolkit](https://github.com/Anjub004/retail-analytics-toolkit) (MIT).
+
+To let the agent only read and analyse data (no file writes, no internet), set `TOOL_PERMISSION_LEVEL=read`.
+
 ## Monitoring
 
 Create a monitor in the dashboard or via the API:
@@ -291,7 +311,8 @@ Summary (details and known limitations in [SECURITY.md](SECURITY.md)):
 - Secrets only from environment variables; wrapped in `SecretStr`; redacted from logs; `.env` is git-ignored.
 - File system tool is confined to `data/workspace` (rejects absolute paths, `..`, drive letters, null bytes and symlink escapes).
 - Browser is read-only, `http(s)` only, blocks private/loopback/link-local/metadata IPs (re-checked on every redirect), caps response size, optional domain allow-list.
-- No shell command execution and no arbitrary code execution (the calculator uses a whitelisted AST evaluator).
+- No shell command execution and no arbitrary code execution (the calculator uses a whitelisted AST evaluator; the data tools accept structured parameters only, never pandas `query`/`eval` strings).
+- Tool permission levels (`read` / `write` / `external`) with `TOOL_PERMISSION_LEVEL`; tools that do not declare a level are treated as `external`.
 - Approval gates for external communication and overwrites.
 - Input validation on every API request and every tool call; limits on iterations, plan size, retries, re-planning, tool time and task time.
 - Optional `DOT_LAB_API_KEY` for the API. Docker Compose binds to `127.0.0.1` by default.

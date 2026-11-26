@@ -6,7 +6,18 @@ Every tool:
   (exposed as ``input_schema`` JSON Schema),
 * implements ``execute(args)`` returning a :class:`ToolResult`,
 * may require human approval for specific inputs via ``approval_reason(args)``,
-* may report itself unavailable (e.g. missing API key) via ``availability()``.
+* may report itself unavailable (e.g. missing API key) via ``availability()``,
+* declares a ``permission`` level and may set its own ``timeout_seconds``.
+
+Permission levels, from least to most risky:
+
+* ``read``: only reads data inside the workspace (calculator, CSV tools),
+* ``write``: creates or changes files in the workspace,
+* ``external``: talks to the outside world (web search, browser, webhooks).
+
+``ToolRegistry(max_permission=...)`` hides and blocks every tool above the
+configured level (``TOOL_PERMISSION_LEVEL``), so the planner never sees it and
+the executor refuses it even if a plan names it.
 
 Tools raise :class:`ToolError` for expected failures. ``retryable=True`` marks
 transient problems (timeouts, network errors) that the executor may retry.
@@ -15,11 +26,25 @@ transient problems (timeouts, network errors) that the executor may retry.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import StrEnum
 from typing import Any, ClassVar, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+class PermissionLevel(StrEnum):
+    READ = "read"
+    WRITE = "write"
+    EXTERNAL = "external"
+
+    @property
+    def rank(self) -> int:
+        return _PERMISSION_RANK[self]
+
+
+_PERMISSION_RANK = {PermissionLevel.READ: 0, PermissionLevel.WRITE: 1, PermissionLevel.EXTERNAL: 2}
 
 
 class ToolError(Exception):
@@ -67,6 +92,10 @@ class BaseTool(ABC):
     name: ClassVar[str]
     description: ClassVar[str]
     input_model: ClassVar[type[BaseModel]]
+    # Tools that do not declare a level are treated as the most risky.
+    permission: ClassVar[PermissionLevel] = PermissionLevel.EXTERNAL
+    # Tool-specific time limit; the effective limit is min(this, TOOL_TIMEOUT_SECONDS).
+    timeout_seconds: ClassVar[float | None] = None
 
     @property
     def input_schema(self) -> dict[str, Any]:
@@ -105,6 +134,9 @@ class BaseTool(ABC):
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
+            "output_schema": ToolResult.model_json_schema(),
+            "permission": self.permission.value,
+            "timeout_seconds": self.timeout_seconds,
             "available": availability.available,
             "unavailable_reason": availability.reason,
         }
@@ -113,8 +145,13 @@ class BaseTool(ABC):
 class ToolRegistry:
     """Holds the tools the agent may use."""
 
-    def __init__(self, tools: list[BaseTool] | None = None) -> None:
+    def __init__(
+        self,
+        tools: list[BaseTool] | None = None,
+        max_permission: PermissionLevel = PermissionLevel.EXTERNAL,
+    ) -> None:
         self._tools: dict[str, BaseTool] = {}
+        self.max_permission = max_permission
         for tool in tools or []:
             self.register(tool)
 
@@ -123,11 +160,22 @@ class ToolRegistry:
             raise ValueError(f"Tool '{tool.name}' is already registered")
         self._tools[tool.name] = tool
 
+    def permitted(self, tool: BaseTool) -> bool:
+        """True if the tool's permission level is allowed by TOOL_PERMISSION_LEVEL."""
+        return tool.permission.rank <= self.max_permission.rank
+
     def get(self, name: str) -> BaseTool:
+        """Return a permitted tool, or raise ToolError (unknown or not permitted)."""
         try:
-            return self._tools[name]
+            tool = self._tools[name]
         except KeyError as exc:
             raise ToolError(f"Unknown tool '{name}'") from exc
+        if not self.permitted(tool):
+            raise ToolError(
+                f"Tool '{name}' needs '{tool.permission}' permission, but "
+                f"TOOL_PERMISSION_LEVEL is '{self.max_permission}'"
+            )
+        return tool
 
     def has(self, name: str) -> bool:
         return name in self._tools
@@ -136,7 +184,11 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def available(self) -> list[BaseTool]:
-        return [t for t in self._tools.values() if t.availability().available]
+        """Tools the planner may use: permitted and configured."""
+        return [t for t in self._tools.values() if self.permitted(t) and t.availability().available]
+
+    def describe(self) -> list[dict[str, Any]]:
+        return [{**t.describe(), "permitted": self.permitted(t)} for t in self._tools.values()]
 
     def names(self) -> list[str]:
         return list(self._tools)

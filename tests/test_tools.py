@@ -57,6 +57,9 @@ def test_tool_registry(tmp_path: Path) -> None:
         "browser",
         "filesystem",
         "notification",
+        "csv_analyzer",
+        "data_summary",
+        "report_generator",
     }
     assert registry.has("calculator")
     with pytest.raises(ToolError, match="Unknown tool"):

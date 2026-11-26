@@ -64,6 +64,7 @@ class Settings(BaseModel):
     database_url: str = f"sqlite:///{PROJECT_ROOT / 'data' / 'dot_lab.db'}"
     workspace_dir: Path = PROJECT_ROOT / "data" / "workspace"
     max_file_bytes: int = Field(default=1_000_000, ge=1)
+    csv_max_bytes: int = Field(default=20_000_000, ge=1)
 
     # --- Web search ---------------------------------------------------------
     search_provider: Literal["none", "tavily", "brave"] = "none"
@@ -91,6 +92,8 @@ class Settings(BaseModel):
     max_goal_length: int = Field(default=2000, ge=10)
     approval_required_tools: list[str] = Field(default_factory=list)
     approval_rejection_policy: Literal["skip", "fail"] = "skip"
+    # Highest tool permission the agent may use: read < write < external.
+    tool_permission_level: Literal["read", "write", "external"] = "external"
 
     # --- Budgets (per task) -------------------------------------------------
     # 0 = no token limit. Prices are USD per 1M tokens, copied from your OpenAI
@@ -189,6 +192,10 @@ class Settings(BaseModel):
             "max_goal_length": _int(env.get("MAX_GOAL_LENGTH"), 2000),
             "approval_required_tools": _csv(env.get("APPROVAL_REQUIRED_TOOLS")),
             "max_task_tokens": _int(env.get("MAX_TASK_TOKENS"), 200_000),
+            "tool_permission_level": (env.get("TOOL_PERMISSION_LEVEL") or "external")
+            .strip()
+            .lower(),
+            "csv_max_bytes": _int(env.get("CSV_MAX_BYTES"), 20_000_000),
             "max_task_cost_usd": _float(env.get("MAX_TASK_COST_USD")),
             "openai_input_cost_per_1m": _float(env.get("OPENAI_INPUT_COST_PER_1M")),
             "openai_output_cost_per_1m": _float(env.get("OPENAI_OUTPUT_COST_PER_1M")),

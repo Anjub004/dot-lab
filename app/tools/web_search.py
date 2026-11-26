@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from app.tools.base import (
     BaseTool,
+    PermissionLevel,
     ToolAvailability,
     ToolConfigurationError,
     ToolContext,
@@ -163,6 +164,7 @@ class WebSearchInput(BaseModel):
 
 class WebSearchTool(BaseTool):
     name = "web_search"
+    permission = PermissionLevel.EXTERNAL
     description = (
         "Search the web. Returns titles, URLs and snippets. Use the browser tool "
         "to read a result page in full."

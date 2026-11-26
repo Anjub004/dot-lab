@@ -24,6 +24,30 @@ The folder names differ from the original target layout (`app/core/…`).
 They were kept on purpose: renaming would touch every import and test without
 adding functionality.
 
+## Tools and permissions
+
+| Tool | Permission | Own timeout | Purpose |
+|---|---|---|---|
+| `calculator` | read | 5 s | Safe arithmetic (AST allow-list, no `eval`) |
+| `csv_analyzer` | read | 20 s | Profile / aggregate / top rows of a workspace CSV |
+| `data_summary` | read | 20 s | Totals, period trend (partial periods flagged), ranking |
+| `filesystem` | write | global | Read / write / list inside the workspace |
+| `report_generator` | write | 10 s | Save a Markdown report to `reports/` |
+| `web_search` | external | global | Search provider (Tavily / Brave) |
+| `browser` | external | global | Read public web pages (SSRF-protected) |
+| `notification` | external | global | Dashboard notification or webhook (approval) |
+
+- `TOOL_PERMISSION_LEVEL` (read < write < external) removes higher tools from
+  the planner's tool list, and `ToolRegistry.get()` refuses them, so a plan
+  that names one fails safely.
+- A tool's own timeout can only make the limit shorter:
+  effective timeout = `min(tool.timeout_seconds, TOOL_TIMEOUT_SECONDS)`.
+- The data tools take structured parameters (operation, columns, metrics,
+  filters) validated by Pydantic. No `eval`, `DataFrame.query` or code strings
+  from the model are executed. pandas work runs in a worker thread so the API
+  stays responsive. A timed-out thread finishes in the background, but its
+  result is discarded.
+
 ## Task lifecycle
 
 ```mermaid
