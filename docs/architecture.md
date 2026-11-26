@@ -73,7 +73,29 @@ in the database untouched; the planner never searches those kinds.
 
 `MAX_AGENT_ITERATIONS`, `MAX_PLAN_STEPS`, `MAX_STEP_RETRIES`, `MAX_REPLANS`,
 `TOOL_TIMEOUT_SECONDS`, `TASK_TIMEOUT_SECONDS` and `MAX_CONCURRENT_TASKS` are
-set in `.env`. Token and cost budgets are planned for Milestone 2.
+set in `.env`.
+
+### Token and cost budgets
+
+```text
+Agent.run(task)
+  budget = totals of earlier runs (llm_usage) + limits from .env
+  with use_budget(budget):              # ContextVar: visible to every LLM call
+      planner / executor / reviewer -> OpenAILLM.generate()
+          budget.check()                # over the limit? BudgetExceededError, no request sent
+          responses.parse(...)
+          budget.record(response.usage) # one llm_usage row per call
+  BudgetExceededError -> task FAILED with "Token budget exceeded ..." / "Cost budget exceeded ..."
+```
+
+- `MAX_TASK_TOKENS` (default 200,000; 0 = unlimited) counts input + output tokens.
+- `MAX_TASK_COST_USD` is optional and needs `OPENAI_INPUT_COST_PER_1M` and
+  `OPENAI_OUTPUT_COST_PER_1M`. Prices change, so Dot Lab never hard-codes them;
+  the cost shown is an estimate.
+- The check happens before each call, so the limit can be exceeded by at most
+  one call.
+- Usage is stored in its own `llm_usage` table. Adding a table needs no
+  migration: `create_all()` creates it in existing databases.
 
 ## Startup checks
 

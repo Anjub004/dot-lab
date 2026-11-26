@@ -38,6 +38,7 @@ from app.agent.state import (
     StepStatus,
     TaskStatus,
 )
+from app.agent.usage import BudgetExceededError, TaskBudget, use_budget
 from app.approvals.manager import ApprovalManager, ApprovalStatus
 from app.config import Settings
 from app.database.database import DatabaseError, utcnow
@@ -45,6 +46,7 @@ from app.logging_config import redact
 from app.memory.memory import MemoryStore
 from app.memory.models import MemoryCreate, MemoryKind
 from app.services.task_service import TaskService, TaskView
+from app.services.usage_service import UsageService
 from app.tools.base import BaseTool, ToolContext, ToolError, ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -82,10 +84,12 @@ class Agent:
         memory: MemoryStore,
         approvals: ApprovalManager,
         tasks: TaskService,
+        usage: UsageService,
         settings: Settings,
         retry_base_delay: float = 1.0,
     ) -> None:
         self.llm = llm
+        self.usage = usage
         self.tools = tools
         self.memory = memory
         self.approvals = approvals
@@ -112,7 +116,12 @@ class Agent:
             return self.tasks.get_task(task_id).status
 
         try:
-            await asyncio.wait_for(self._loop(task_id), timeout=self.settings.task_timeout_seconds)
+            with use_budget(self.budget_for(task_id)):
+                await asyncio.wait_for(
+                    self._loop(task_id), timeout=self.settings.task_timeout_seconds
+                )
+        except BudgetExceededError as exc:
+            self._fail(task_id, str(exc))
         except TimeoutError:
             self._fail(task_id, f"Task timed out after {self.settings.task_timeout_seconds}s")
         except asyncio.CancelledError:
@@ -128,6 +137,17 @@ class Agent:
             logger.exception("unexpected agent error", extra={"task_id": task_id})
             self._fail(task_id, f"Unexpected error: {type(exc).__name__}: {str(exc)[:300]}")
         return self.tasks.get_task(task_id).status
+
+    def budget_for(self, task_id: str) -> TaskBudget:
+        """Budget for a task, starting from the usage of its earlier runs."""
+        return TaskBudget(
+            task_id=task_id,
+            sink=self.usage,
+            max_tokens=self.settings.max_task_tokens,
+            max_cost_usd=self.settings.max_task_cost_usd,
+            pricing=self.settings.pricing,
+            initial=self.usage.totals(task_id),
+        )
 
     async def _loop(self, task_id: str) -> None:
         while True:

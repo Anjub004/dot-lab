@@ -19,6 +19,7 @@ from app.memory.memory import MemoryStore, SQLiteMemoryStore
 from app.services.monitoring import MonitorScheduler, MonitorService
 from app.services.runner import TaskRunner
 from app.services.task_service import TaskService
+from app.services.usage_service import UsageService
 from app.tools import build_default_registry
 from app.tools.base import ToolRegistry
 from app.tools.notifications import NotificationStore
@@ -30,6 +31,7 @@ class AppContext:
     db: Database
     llm: LLMClient
     tasks: TaskService
+    usage: UsageService
     memory: MemoryStore
     approvals: ApprovalManager
     notifications: NotificationStore
@@ -80,6 +82,7 @@ def build_context(
             max_retries=settings.openai_max_retries,
         )
     tasks = TaskService(db)
+    usage = UsageService(db)
     memory = SQLiteMemoryStore(db)
     approvals = ApprovalManager(db, always_require=settings.approval_required_tools)
     notifications = NotificationStore(db)
@@ -90,6 +93,7 @@ def build_context(
         memory=memory,
         approvals=approvals,
         tasks=tasks,
+        usage=usage,
         settings=settings,
         retry_base_delay=retry_base_delay,
     )
@@ -101,6 +105,7 @@ def build_context(
         db=db,
         llm=llm,
         tasks=tasks,
+        usage=usage,
         memory=memory,
         approvals=approvals,
         notifications=notifications,

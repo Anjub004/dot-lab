@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.agent.llm import ModelCheck
 from app.agent.state import Plan, TaskStatus
+from app.agent.usage import UsageReport
 from app.approvals.manager import Approval
 from app.memory.models import MemoryRecord
 from app.services.task_service import TaskEvent, TaskView, ToolCall
@@ -78,6 +79,7 @@ class TaskDetail(TaskSummary):
     tool_calls: list[ToolCall]
     approvals: list[Approval]
     memory: list[MemoryRecord]
+    usage: UsageReport
 
 
 class ApprovalDecision(BaseModel):

@@ -208,3 +208,13 @@ def test_health_reports_model_not_configured(settings: Settings) -> None:
             time.sleep(0.05)
             check = c.get("/api/health").json()["model_check"]
     assert check == {"status": "unchecked", "detail": "OpenAI is not configured."}
+
+
+def test_task_detail_includes_usage(client: TestClient, llm: ScriptedLLM) -> None:
+    llm.usage_per_call = (50, 10)
+    script_calculation(llm)
+    task_id = client.post("/api/tasks", json={"goal": "What is 6 times 7?"}).json()["task_id"]
+    body = wait_for_status(client, task_id, {"COMPLETED"})
+    usage = body["usage"]
+    assert usage["llm_calls"] == 4 and usage["total_tokens"] == 240
+    assert usage["max_tokens"] == 200_000 and usage["estimated_cost_usd"] is None

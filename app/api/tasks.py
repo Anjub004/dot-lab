@@ -63,6 +63,7 @@ def get_task(task_id: str, ctx: AppContext = Depends(get_ctx)) -> TaskDetail:
         tool_calls=ctx.tasks.list_tool_calls(task_id),
         approvals=ctx.approvals.list(task_id=task_id),
         memory=ctx.memory.retrieve(task_id=task_id, limit=100),
+        usage=ctx.agent.budget_for(task_id).report(),
     )
 
 

@@ -119,3 +119,68 @@ async def test_check_model_problems_never_raise(code: int, expected: str) -> Non
     await client.aclose()
     assert result.status == expected
     assert "sk-test" not in result.detail  # never leaks the key
+
+
+# ---------------------------------------------------------------- budgets --
+
+
+class _Sink:
+    def __init__(self) -> None:
+        self.rows: list[dict] = []
+
+    def record(self, **row: object) -> None:
+        self.rows.append(row)
+
+
+async def test_openai_llm_records_usage_in_active_budget() -> None:
+    from app.agent.usage import TaskBudget, use_budget
+
+    plan = {"summary": "s", "steps": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _response(json.dumps(plan))
+        body["usage"] = {
+            "input_tokens": 120,
+            "input_tokens_details": {"cached_tokens": 0},
+            "output_tokens": 30,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 150,
+        }
+        return httpx.Response(200, json=body)
+
+    llm, client = _llm(handler)
+    sink = _Sink()
+    budget = TaskBudget(task_id="t1", sink=sink, max_tokens=10_000)
+    with use_budget(budget):
+        await llm.generate(system="s", prompt="p", schema=PlannerOutput)
+    await llm.generate(system="s", prompt="p", schema=PlannerOutput)  # outside a task: not counted
+    await client.aclose()
+
+    assert budget.usage.total_tokens == 150 and budget.usage.llm_calls == 1
+    assert sink.rows == [
+        {
+            "task_id": "t1",
+            "model": "test-model",
+            "purpose": "PlannerOutput",
+            "input_tokens": 120,
+            "output_tokens": 30,
+        }
+    ]
+
+
+async def test_openai_llm_makes_no_request_when_budget_is_spent() -> None:
+    from app.agent.usage import BudgetExceededError, TaskBudget, use_budget
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    llm, client = _llm(handler)
+    budget = TaskBudget(task_id="t1", sink=_Sink(), max_tokens=100)
+    budget.record(model="m", purpose="p", input_tokens=100, output_tokens=0)
+    with use_budget(budget), pytest.raises(BudgetExceededError):
+        await llm.generate(system="s", prompt="p", schema=PlannerOutput)
+    await client.aclose()
+    assert requests == []
