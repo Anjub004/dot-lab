@@ -17,6 +17,7 @@ class TaskStatus(StrEnum):
     PLANNING = "PLANNING"
     RUNNING = "RUNNING"
     WAITING_APPROVAL = "WAITING_APPROVAL"
+    WAITING_INPUT = "WAITING_INPUT"
     REVIEWING = "REVIEWING"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
@@ -46,6 +47,7 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.PLANNING: frozenset(
         {
             TaskStatus.RUNNING,
+            TaskStatus.WAITING_INPUT,
             TaskStatus.PAUSED,
             TaskStatus.CANCELLED,
             TaskStatus.FAILED,
@@ -65,6 +67,10 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
         }
     ),
     TaskStatus.WAITING_APPROVAL: frozenset(
+        {TaskStatus.PENDING, TaskStatus.CANCELLED, TaskStatus.FAILED}
+    ),
+    # The planner asked the user a question; answering sends the task back to PENDING.
+    TaskStatus.WAITING_INPUT: frozenset(
         {TaskStatus.PENDING, TaskStatus.CANCELLED, TaskStatus.FAILED}
     ),
     # The reviewer judges the finished plan: it can complete or fail the task,
@@ -157,6 +163,20 @@ class Plan(BaseModel):
         return f"step_{len(self.steps) + 1}"
 
 
+class Clarification(BaseModel):
+    """A question the planner asked the user, and the user's answer."""
+
+    question: str
+    answer: str | None = None
+    asked_at: datetime
+    answered_at: datetime | None = None
+
+
+# How many questions the planner may ask per task before it must plan with
+# stated assumptions instead (stops an endless question loop).
+MAX_CLARIFICATIONS = 2
+
+
 class AgentState(BaseModel):
     """Snapshot of everything the agent loop needs to decide its next move."""
 
@@ -186,6 +206,8 @@ class EventType(StrEnum):
     STEP_FAILED = "STEP_FAILED"
     STEP_RETRY = "STEP_RETRY"
     STEP_SKIPPED = "STEP_SKIPPED"
+    CLARIFICATION_REQUESTED = "CLARIFICATION_REQUESTED"
+    CLARIFICATION_ANSWERED = "CLARIFICATION_ANSWERED"
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_GRANTED = "APPROVAL_GRANTED"
     APPROVAL_REJECTED = "APPROVAL_REJECTED"
