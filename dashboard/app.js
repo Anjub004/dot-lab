@@ -148,7 +148,7 @@ function renderDetail(t) {
   $("d-meta").textContent = `Created ${fmtTime(t.created_at)} · updated ${fmtTime(t.updated_at)} · ${t.iterations} iterations · id ${t.id}`;
 
   const actions = [];
-  if (["PENDING", "PLANNING", "RUNNING"].includes(t.status)) actions.push(`<button class="ghost" data-act="pause">Pause</button>`);
+  if (["PENDING", "PLANNING", "RUNNING", "REVIEWING"].includes(t.status)) actions.push(`<button class="ghost" data-act="pause">Pause</button>`);
   if (t.status === "PAUSED") actions.push(`<button data-act="resume">Resume</button>`);
   if (!["COMPLETED", "FAILED", "CANCELLED"].includes(t.status)) actions.push(`<button class="reject" data-act="cancel">Cancel</button>`);
   $("d-actions").innerHTML = actions.join("");

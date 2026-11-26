@@ -129,7 +129,7 @@ td.nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(
 }
 .pill.ok { background: var(--ok-bg); color: var(--ok); }
 .pill.bad { background: var(--bad-bg); color: var(--bad); }
-.status.RUNNING, .status.PLANNING, .status.PENDING { background: var(--info-bg); color: var(--info); }
+.status.RUNNING, .status.PLANNING, .status.PENDING, .status.REVIEWING { background: var(--info-bg); color: var(--info); }
 .status.WAITING_APPROVAL, .status.PAUSED { background: var(--warn-bg); color: var(--warn); }
 .status.COMPLETED, .status.APPROVED, .status.SUCCESS { background: var(--ok-bg); color: var(--ok); }
 .status.FAILED, .status.REJECTED, .status.ERROR { background: var(--bad-bg); color: var(--bad); }
