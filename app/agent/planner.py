@@ -46,6 +46,9 @@ Rules:
 - Set requires_approval = true for steps that contact external parties, overwrite or
   delete data, or are otherwise risky.
 - If a needed tool is not listed, plan around it using the tools that ARE listed.
+- If the goal refers to an earlier conversation ("the same for June", "that file"),
+  use the recent conversation to resolve it, and write every step so it is complete on
+  its own (name the file, columns, dates, etc.).
 
 Available tools:
 {tools}
@@ -75,10 +78,19 @@ class Planner:
         self.max_steps = max_steps
         self.max_attempts = max_attempts
 
-    async def create_plan(self, goal: str, tools: list[BaseTool], memory_context: str = "") -> Plan:
+    async def create_plan(
+        self,
+        goal: str,
+        tools: list[BaseTool],
+        memory_context: str = "",
+        conversation_context: str = "",
+    ) -> Plan:
         """Ask the LLM for a plan, re-asking with feedback if it is invalid."""
         system = PLANNER_SYSTEM.format(max_steps=self.max_steps, tools=describe_tools(tools))
-        prompt = f"Goal:\n{goal}\n"
+        prompt = ""
+        if conversation_context:
+            prompt += f"Recent conversation (oldest first):\n{conversation_context}\n\n"
+        prompt += f"Goal:\n{goal}\n"
         if memory_context:
             prompt += f"\nPossibly relevant memory from earlier tasks:\n{memory_context}\n"
 

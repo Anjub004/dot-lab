@@ -22,6 +22,7 @@ a pause, or a process restart. The whole run is wrapped in a timeout.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from enum import StrEnum
 
@@ -45,6 +46,7 @@ from app.database.database import DatabaseError, utcnow
 from app.logging_config import redact
 from app.memory.memory import MemoryStore
 from app.memory.models import MemoryCreate, MemoryKind
+from app.services.conversation_service import ConversationService
 from app.services.task_service import TaskService, TaskView
 from app.services.usage_service import UsageService
 from app.tools.base import BaseTool, ToolContext, ToolError, ToolRegistry
@@ -85,11 +87,13 @@ class Agent:
         approvals: ApprovalManager,
         tasks: TaskService,
         usage: UsageService,
+        conversations: ConversationService,
         settings: Settings,
         retry_base_delay: float = 1.0,
     ) -> None:
         self.llm = llm
         self.usage = usage
+        self.conversations = conversations
         self.tools = tools
         self.memory = memory
         self.approvals = approvals
@@ -180,7 +184,10 @@ class Agent:
     async def _create_plan(self, task: TaskView) -> None:
         self.tasks.add_event(task.id, EventType.PLANNING_STARTED, "Creating plan")
         plan = await self.planner.create_plan(
-            task.goal, self.tools.available(), self._memory_context(task.goal, task.id)
+            task.goal,
+            self.tools.available(),
+            self._memory_context(task.goal, task.id),
+            self._conversation_context(task),
         )
         self.tasks.save_plan(task.id, plan)
         self.tasks.add_event(
@@ -379,7 +386,10 @@ class Agent:
         self.tasks.add_event(task.id, EventType.REVIEW_STARTED, "Reviewing results")
         available = [t.name for t in self.tools.available()]
         evaluation = await self.evaluator.evaluate_goal(
-            plan, self._step_context(plan, total=CONTEXT_TOTAL_CHARS * 2), available
+            plan,
+            self._step_context(plan, total=CONTEXT_TOTAL_CHARS * 2),
+            available,
+            self._conversation_context(task),
         )
 
         if (
@@ -429,6 +439,7 @@ class Agent:
         ):
             self.tasks.add_event(task.id, EventType.TASK_COMPLETED, "Task completed")
             self._remember(task.id, MemoryKind.RESULT, f"Goal: {task.goal}\n\n{result}")
+            self._reply(task.id, result)
         return True
 
     def _fail(
@@ -447,6 +458,10 @@ class Agent:
             self.approvals.cancel_for_task(task_id)
             self.tasks.add_event(task_id, EventType.TASK_FAILED, safe)
             logger.warning("task failed", extra={"task_id": task_id, "error": safe})
+            reply = f"The task failed: {safe}"
+            if result:
+                reply += f"\n\n{result}"
+            self._reply(task_id, reply)
 
     # -------------------------------------------------------------- context --
     def _step_context(self, plan: Plan, total: int = CONTEXT_TOTAL_CHARS) -> str:
@@ -461,11 +476,30 @@ class Agent:
         text = "\n\n".join(blocks)
         return text[-total:] if len(text) > total else text
 
+    def _conversation_context(self, task: TaskView) -> str:
+        """Short-term context: earlier messages of the task's conversation, if any."""
+        if not task.conversation_id:
+            return ""
+        return self.conversations.context_for_task(
+            task.conversation_id, task.id, self.settings.conversation_context_messages
+        )
+
+    def _reply(self, task_id: str, text: str) -> None:
+        """Post the task's outcome to its conversation (if it was started from one)."""
+        task = self.tasks.get_task(task_id)
+        if task.conversation_id:
+            # LookupError: the conversation was deleted while the task ran.
+            with contextlib.suppress(LookupError):
+                self.conversations.add_message(
+                    task.conversation_id, "assistant", text, task_id=task_id
+                )
+
     def _memory_context(self, goal: str, task_id: str) -> str:
+        # User notes are included: they are facts the user explicitly asked Dot Lab to keep.
         records = self.memory.search(
             goal,
             limit=5,
-            kinds=[MemoryKind.RESULT, MemoryKind.OBSERVATION],
+            kinds=[MemoryKind.RESULT, MemoryKind.OBSERVATION, MemoryKind.NOTE],
             exclude_task_id=task_id,
         )
         return "\n".join(

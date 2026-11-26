@@ -73,9 +73,12 @@ class Evaluator:
         return await self.llm.generate(system=STEP_SYSTEM, prompt=prompt, schema=StepEvaluation)
 
     async def evaluate_goal(
-        self, plan: Plan, context: str, tool_names: list[str]
+        self, plan: Plan, context: str, tool_names: list[str], conversation_context: str = ""
     ) -> GoalEvaluation:
-        prompt = f"Goal: {plan.goal}\n\nStep results:\n{context}"
+        prompt = ""
+        if conversation_context:
+            prompt += f"Recent conversation (oldest first):\n{conversation_context}\n\n"
+        prompt += f"Goal: {plan.goal}\n\nStep results:\n{context}"
         system = GOAL_SYSTEM.format(tools=", ".join(tool_names) or "none")
         return await self.llm.generate(system=system, prompt=prompt, schema=GoalEvaluation)
 
