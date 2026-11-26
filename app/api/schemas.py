@@ -115,6 +115,28 @@ class Overview(BaseModel):
     monitoring_jobs: int
     unread_notifications: int
     status_counts: dict[str, int]
+    llm_calls_total: int = 0
+    tokens_used_total: int = 0
+
+
+class SettingsView(BaseModel):
+    """Configuration shown in the dashboard. Never includes secrets."""
+
+    version: str
+    openai_model: str | None
+    llm_configured: bool
+    model_check: ModelCheck
+    api_key_protection: bool
+    search_provider: str
+    browser_backend: str
+    tool_permission_level: str
+    approval_required_tools: list[str]
+    approval_rejection_policy: str
+    limits: dict[str, int]
+    max_task_tokens: int | None
+    max_task_cost_usd: float | None
+    prices_configured: bool
+    monitor_scheduler_enabled: bool
 
 
 class Health(BaseModel):

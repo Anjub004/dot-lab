@@ -122,6 +122,26 @@ Raw tool output, goals and plans are **not** copied into long-term memory.
 Rows of kind `goal`, `plan` and `tool_result` written by earlier versions stay
 in the database untouched; the planner never searches those kinds.
 
+## Dashboard
+
+`dashboard/` is plain HTML, CSS and JavaScript served by FastAPI at `/` (no
+build step, no external assets, works offline). One page, eight sections
+selected by the URL hash (`#overview`, `#workspace`, `#tasks`, `#history`,
+`#activity`, `#memory`, `#reports`, `#settings`).
+
+- Data comes only from the JSON API. Every server value is escaped before it is
+  inserted into HTML.
+- The current section refreshes every 4 seconds (paused while the browser tab is
+  hidden). Sections with forms you are filling in, like History, Memory, Reports
+  and Settings, reload only when you act, so typing is never interrupted.
+- The optional `X-API-Key` is kept in the browser's local storage and sent with
+  every request, including file downloads (which use `fetch`, not plain links).
+- Endpoints added for the dashboard: `GET /api/activity` (events across tasks,
+  filterable, paged by `before_id`), `GET /api/settings` (configuration without
+  secrets), `GET /api/reports` and `GET /api/reports/{name}` (saved reports),
+  and `q` / `finished` / `offset` / `conversation_id` filters on `GET /api/tasks`.
+- `scripts/ui_smoke_test.py` drives every section in Chromium with the fake LLM.
+
 ## Database migrations
 
 Schema changes are managed with Alembic (`app/database/migrations/`). On

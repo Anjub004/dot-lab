@@ -6,7 +6,7 @@ import contextlib
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.agent.state import EventType, TaskStatus
+from app.agent.state import TERMINAL_STATUSES, EventType, TaskStatus
 from app.api.deps import get_ctx
 from app.api.schemas import (
     ClarificationAnswer,
@@ -58,10 +58,22 @@ async def create_task(body: TaskCreate, ctx: AppContext = Depends(get_ctx)) -> T
 @router.get("", response_model=list[TaskSummary])
 def list_tasks(
     status_filter: TaskStatus | None = Query(default=None, alias="status"),
+    finished: bool = Query(default=False, description="Only completed, failed or cancelled."),
+    q: str | None = Query(default=None, max_length=200, description="Search in goals."),
+    conversation_id: str | None = Query(default=None, max_length=32),
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     ctx: AppContext = Depends(get_ctx),
 ) -> list[TaskSummary]:
-    return [TaskSummary.from_view(t) for t in ctx.tasks.list_tasks(status_filter, limit)]
+    views = ctx.tasks.list_tasks(
+        status_filter,
+        limit,
+        statuses=set(TERMINAL_STATUSES) if finished else None,
+        query=q,
+        offset=offset,
+        conversation_id=conversation_id,
+    )
+    return [TaskSummary.from_view(t) for t in views]
 
 
 @router.get("/{task_id}", response_model=TaskDetail)

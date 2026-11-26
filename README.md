@@ -103,7 +103,16 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 - **Startup model check**: `GET /api/health` reports whether `OPENAI_MODEL` is available to your API key.
 - **Background execution** with asyncio, concurrency limit, pause / resume / cancel, and recovery of interrupted tasks on restart.
 - **Monitoring mode** (experimental): scheduled goals, LLM-based change detection, notify only on meaningful change.
-- **Dashboard**: overview cards, task list, task detail (goal, plan, current step, history, tool calls, memory, approvals, final result), approval panel, monitors and notifications.
+- **Dashboard** (dark, responsive, no build step) with 8 sections:
+  - **Overview**: KPIs, items that need you (approvals, questions), task status, recent tasks and activity, notifications.
+  - **AI Workspace**: chat; each message starts a task, follow-ups use the conversation, questions are answered by replying.
+  - **Tasks**: start tasks, filter by status, progress, monitors (create, run, enable/disable, delete).
+  - **Execution History**: finished tasks with search, duration and report download.
+  - **Agent Activity**: live feed of every event across tasks, filterable (tools, approvals, questions, errors).
+  - **Memory**: add notes, filter by category or kind, search, edit, delete.
+  - **Reports**: view/download reports the agent saved, and download any task's report.
+  - **Settings**: API key for this browser, AI connection and model check, configuration (read-only), tools and permissions.
+  - A task drawer everywhere: plan, current step, question box, approvals, history, tool calls, memory, actions.
 - **Structured JSON logging** with secret redaction.
 - **Optional API key** protection for the HTTP API.
 - **Offline test suite** (no API key or network needed).
@@ -133,7 +142,8 @@ dot-lab/
 │   ├── database/            # database.py (engine/session/migrate), models.py, migrations/
 │   └── services/            # task_service.py, runner.py (background), monitoring.py,
 │                            # usage_service.py, conversation_service.py
-├── dashboard/               # index.html, styles.css, app.js
+├── dashboard/               # index.html, styles.css, app.js (8 sections, plain JavaScript)
+├── scripts/                 # ui_smoke_test.py (optional browser test of the dashboard)
 ├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py,
 │                            # seed_demo_data.py, data/demo_sales.csv
 ├── tests/                   # offline pytest suite with a scripted fake LLM
@@ -383,6 +393,13 @@ The suite runs **offline**: the LLM is replaced by a scripted fake, the OpenAI S
 
 ```bash
 pytest -m live -v
+```
+
+**Dashboard browser test** (optional, not in CI): clicks through all 8 sections in a real Chromium with the fake LLM and fails on any JavaScript error.
+
+```bash
+pip install playwright && playwright install chromium
+python scripts/ui_smoke_test.py --screenshots ./screenshots
 ```
 
 ## Docker

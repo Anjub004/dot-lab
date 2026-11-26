@@ -3,116 +3,313 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>Dot Lab</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="Main navigation">
     <div class="brand">
-      <span class="dot" aria-hidden="true"></span>
-      <div>
-        <h1>Dot Lab</h1>
-        <p class="tagline">Experimental always-on agent · independent project, not affiliated with OpenAI</p>
+      <span class="logo" aria-hidden="true"></span>
+      <div><strong>Dot Lab</strong><small>Autonomous agent workspace</small></div>
+    </div>
+    <nav class="nav">
+      <a href="#overview" data-nav="overview">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Overview <span class="count" id="count-attention" hidden></span></a>
+      <a href="#workspace" data-nav="workspace">
+        <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+        AI Workspace</a>
+      <a href="#tasks" data-nav="tasks">
+        <svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>
+        Tasks <span class="count" id="count-active" hidden></span></a>
+      <a href="#history" data-nav="history">
+        <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+        Execution History</a>
+      <a href="#activity" data-nav="activity">
+        <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+        Agent Activity</a>
+      <a href="#memory" data-nav="memory">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+        Memory</a>
+      <a href="#reports" data-nav="reports">
+        <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>
+        Reports</a>
+      <a href="#settings" data-nav="settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span id="llm-status" class="pill">Checking AI connection…</span>
+      <small class="faint">Independent open-source project, not affiliated with OpenAI.</small>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="Open menu">☰</button>
+      <div class="titles">
+        <h1 id="view-title">Overview</h1>
+        <p id="view-subtitle" class="muted"></p>
       </div>
-    </div>
-    <div class="topbar-right">
-      <span id="llm-status" class="pill">checking…</span>
-      <details class="apikey">
-        <summary>API key</summary>
-        <label>X-API-Key (only if DOT_LAB_API_KEY is set)
-          <input id="api-key" type="password" autocomplete="off" placeholder="optional">
-        </label>
-      </details>
-    </div>
-  </header>
-
-  <main>
-    <div id="error-banner" class="banner error" hidden></div>
-
-    <section class="cards" aria-label="Overview">
-      <div class="card"><span class="label">Active tasks</span><span id="ov-active" class="value">–</span></div>
-      <div class="card"><span class="label">Completed</span><span id="ov-completed" class="value">–</span></div>
-      <div class="card warn"><span class="label">Waiting approvals</span><span id="ov-approvals" class="value">–</span></div>
-      <div class="card bad"><span class="label">Failed</span><span id="ov-failed" class="value">–</span></div>
-      <div class="card"><span class="label">Monitoring jobs</span><span id="ov-monitors" class="value">–</span></div>
-    </section>
-
-    <section id="approvals-section" class="panel approvals" hidden>
-      <h2>Agent is waiting for your approval</h2>
-      <div id="approvals-list"></div>
-    </section>
-
-    <div class="grid">
-      <section class="panel">
-        <h2>New task</h2>
-        <form id="task-form">
-          <textarea id="goal" rows="3" maxlength="5000" required
-            placeholder="e.g. Research the latest developments in AI agents and prepare a summary."></textarea>
-          <button type="submit">Start task</button>
-        </form>
-      </section>
-
-      <section class="panel">
-        <h2>New monitor <span class="tag">experimental</span></h2>
-        <form id="monitor-form" class="monitor-form">
-          <input id="m-name" placeholder="Name, e.g. AI News Monitor" required maxlength="200">
-          <input id="m-goal" placeholder="Goal to re-run periodically" required maxlength="5000">
-          <div class="row">
-            <label>Every <input id="m-interval" type="number" min="1" value="360" required> minutes</label>
-            <button type="submit">Create monitor</button>
-          </div>
-        </form>
-      </section>
-    </div>
-
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Tasks</h2>
-        <select id="status-filter" aria-label="Filter by status">
-          <option value="">All statuses</option>
-          <option>PENDING</option><option>PLANNING</option><option>RUNNING</option>
-          <option>REVIEWING</option><option>WAITING_APPROVAL</option><option>WAITING_INPUT</option><option>PAUSED</option><option>COMPLETED</option>
-          <option>FAILED</option><option>CANCELLED</option>
-        </select>
+      <div class="topbar-actions">
+        <span id="last-refresh" class="faint small hide-mobile"></span>
+        <button id="new-task-btn">+ New task</button>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Task</th><th>Status</th><th>Current step</th><th>Progress</th><th>Created</th><th>Started</th><th>Last updated</th></tr>
-          </thead>
-          <tbody id="task-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
+    </header>
 
-    <div class="grid">
-      <section class="panel">
-        <h2>Monitors</h2>
-        <div id="monitor-list" class="muted">No monitors yet.</div>
-      </section>
-      <section class="panel">
-        <h2>Notifications</h2>
-        <div id="notification-list" class="muted">No notifications.</div>
-      </section>
-    </div>
-  </main>
+    <div id="error-banner" class="banner error" role="alert" hidden></div>
 
-  <div id="drawer" class="drawer" hidden>
-    <div class="drawer-backdrop" data-close></div>
-    <aside class="drawer-body" role="dialog" aria-modal="true" aria-labelledby="d-goal">
-      <div class="drawer-head">
-        <div>
-          <span id="d-status" class="status"></span>
-          <h2 id="d-goal"></h2>
-          <p id="d-meta" class="muted"></p>
+    <!-- 1. Overview ---------------------------------------------------- -->
+    <section class="view" id="view-overview" data-view="overview">
+      <div class="kpis" id="kpis"><div class="loading">Loading</div></div>
+      <div id="attention"></div>
+      <div class="grid two">
+        <div class="panel">
+          <div class="panel-head"><h2>Task status</h2></div>
+          <div id="status-chart"></div>
+          <div class="panel-head" style="margin-top:14px"><h2>Recent tasks</h2><a href="#tasks" class="small">All tasks</a></div>
+          <div id="overview-tasks" class="list"></div>
         </div>
-        <button class="ghost" data-close aria-label="Close">✕</button>
+        <div class="panel">
+          <div class="panel-head"><h2>Recent activity</h2><a href="#activity" class="small">Full activity</a></div>
+          <ul class="timeline" id="overview-activity"></ul>
+        </div>
       </div>
-      <div id="d-actions" class="actions"></div>
-      <div id="d-content"></div>
-    </aside>
-  </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2>Notifications</h2></div>
+        <div id="notifications" class="list"></div>
+      </div>
+    </section>
 
-  <script src="app.js"></script>
+    <!-- 2. AI Workspace ------------------------------------------------ -->
+    <section class="view" id="view-workspace" data-view="workspace">
+      <div class="chat-layout">
+        <div class="panel conv-list">
+          <div class="row between"><h2>Conversations</h2><button class="small" data-action="new-conversation">+ New</button></div>
+          <div class="conv-items" id="conv-items"></div>
+        </div>
+        <div class="panel chat">
+          <div class="chat-head">
+            <h2 id="chat-title">New conversation</h2>
+            <button class="small danger" id="chat-delete" data-action="delete-conversation" hidden>Delete</button>
+          </div>
+          <div class="messages" id="chat-messages"></div>
+          <form class="composer" id="chat-form">
+            <textarea id="chat-input" rows="2" maxlength="5000" placeholder="Ask Dot Lab to do something… (Enter to send, Shift+Enter for a new line)" aria-label="Message"></textarea>
+            <button type="submit" id="chat-send">Send</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Tasks ------------------------------------------------------- -->
+    <section class="view" id="view-tasks" data-view="tasks">
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-head"><h2>Start a task</h2></div>
+          <form id="task-form" class="row" style="align-items:flex-end">
+            <div style="flex:1;min-width:260px">
+              <label for="goal">Goal</label>
+              <textarea id="goal" rows="2" maxlength="5000" required placeholder="e.g. Analyse demo/demo_sales.csv: rank branches by gross profit and save a short report."></textarea>
+            </div>
+            <button type="submit">Start task</button>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <h2 style="flex:1">Tasks</h2>
+            <label for="status-filter" class="hidden">Status</label>
+            <select id="status-filter" aria-label="Filter by status">
+              <option value="">All statuses</option>
+              <option>PENDING</option><option>PLANNING</option><option>RUNNING</option>
+              <option>WAITING_INPUT</option><option>WAITING_APPROVAL</option><option>REVIEWING</option>
+              <option>PAUSED</option><option>COMPLETED</option><option>FAILED</option><option>CANCELLED</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Task</th><th>Status</th><th>Progress</th><th>Current step</th><th>Updated</th></tr></thead>
+              <tbody id="task-rows"><tr><td colspan="5" class="loading">Loading</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="grid two">
+          <div class="panel">
+            <div class="panel-head"><h2>New monitor</h2></div>
+            <p class="muted small" style="margin-bottom:10px">Re-runs a goal on a schedule and notifies you only when the result meaningfully changes.</p>
+            <form id="monitor-form">
+              <div class="field"><label for="m-name">Name</label><input id="m-name" required maxlength="200" placeholder="e.g. Weekly supplier check"></div>
+              <div class="field"><label for="m-goal">Goal</label><input id="m-goal" required minlength="3" maxlength="5000" placeholder="Goal to re-run"></div>
+              <div class="row">
+                <label for="m-interval" style="margin:0">Every</label>
+                <input id="m-interval" type="number" min="1" value="360" required style="width:110px">
+                <span class="muted">minutes</span><span class="spacer"></span>
+                <button type="submit">Create monitor</button>
+              </div>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Monitors</h2></div>
+            <div id="monitor-list" class="list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Execution history ------------------------------------------- -->
+    <section class="view" id="view-history" data-view="history">
+      <div class="panel">
+        <div class="toolbar">
+          <input type="search" id="history-q" placeholder="Search goals…" aria-label="Search goals">
+          <select id="history-status" aria-label="Filter finished tasks">
+            <option value="">All finished</option><option>COMPLETED</option><option>FAILED</option><option>CANCELLED</option>
+          </select>
+          <span class="spacer"></span><span id="history-count" class="muted small"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Task</th><th>Status</th><th>Steps</th><th>Finished</th><th>Duration</th><th></th></tr></thead>
+            <tbody id="history-rows"></tbody>
+          </table>
+        </div>
+        <div class="row" style="justify-content:center;margin-top:12px"><button class="ghost small" id="history-more" data-action="history-more" hidden>Load more</button></div>
+      </div>
+    </section>
+
+    <!-- 5. Agent activity ---------------------------------------------- -->
+    <section class="view" id="view-activity" data-view="activity">
+      <div class="panel">
+        <div class="toolbar">
+          <div class="chips" id="activity-filters">
+            <button class="chip active" data-action="activity-kind" data-kind="all">All</button>
+            <button class="chip" data-action="activity-kind" data-kind="tasks">Tasks</button>
+            <button class="chip" data-action="activity-kind" data-kind="tools">Tool calls</button>
+            <button class="chip" data-action="activity-kind" data-kind="approvals">Approvals</button>
+            <button class="chip" data-action="activity-kind" data-kind="questions">Questions</button>
+            <button class="chip" data-action="activity-kind" data-kind="errors">Errors</button>
+          </div>
+          <span class="spacer"></span>
+          <label class="row" style="margin:0;color:var(--muted)"><input type="checkbox" id="activity-live" checked style="width:auto"> Live updates</label>
+        </div>
+        <ul class="timeline" id="activity-list"></ul>
+        <div class="row" style="justify-content:center;margin-top:12px"><button class="ghost small" id="activity-more" data-action="activity-more" hidden>Load older</button></div>
+      </div>
+    </section>
+
+    <!-- 6. Memory ------------------------------------------------------- -->
+    <section class="view" id="view-memory" data-view="memory">
+      <div class="grid sidebar-left">
+        <div class="stack">
+          <div class="panel">
+            <div class="panel-head"><h2>Add a note</h2></div>
+            <p class="muted small" style="margin-bottom:10px">Facts you want the agent to use when planning, e.g. “Gross profit in reports excludes VAT”.</p>
+            <form id="memory-form">
+              <div class="field"><label for="memory-content">Note</label><textarea id="memory-content" rows="3" maxlength="20000" required></textarea></div>
+              <div class="field"><label for="memory-category">Category</label><input id="memory-category" maxlength="50" placeholder="general" list="category-options"></div>
+              <button type="submit">Save note</button>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Categories</h2></div>
+            <div class="chips" id="memory-categories"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <input type="search" id="memory-q" placeholder="Search memory (2+ characters)…" aria-label="Search memory">
+            <select id="memory-kind" aria-label="Filter by kind">
+              <option value="">All kinds</option><option value="note">Notes</option><option value="result">Task results</option><option value="observation">Observations</option>
+            </select>
+            <span class="spacer"></span><span id="memory-count" class="muted small"></span>
+          </div>
+          <div id="memory-list"></div>
+          <div class="row" style="justify-content:center;margin-top:12px"><button class="ghost small" id="memory-more" data-action="memory-more" hidden>Load more</button></div>
+        </div>
+      </div>
+      <datalist id="category-options"></datalist>
+    </section>
+
+    <!-- 7. Reports ------------------------------------------------------ -->
+    <section class="view" id="view-reports" data-view="reports">
+      <div class="grid two">
+        <div class="panel">
+          <div class="panel-head"><h2>Saved reports</h2></div>
+          <p class="muted small" style="margin-bottom:10px">Reports the agent saved with the report generator tool (workspace folder <code>reports/</code>).</p>
+          <div id="report-files" class="list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Task reports</h2></div>
+          <p class="muted small" style="margin-bottom:10px">A Markdown summary of any finished task: goal, plan, tool calls, approvals, tokens and timeline.</p>
+          <div id="report-tasks" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Settings ----------------------------------------------------- -->
+    <section class="view" id="view-settings" data-view="settings">
+      <div class="grid two">
+        <div class="stack">
+          <div class="panel">
+            <div class="panel-head"><h2>Dashboard access</h2></div>
+            <p class="muted small" style="margin-bottom:10px">If the server sets <code>DOT_LAB_API_KEY</code>, enter it here. It is stored only in this browser.</p>
+            <form id="api-key-form" class="row">
+              <input id="api-key" type="password" autocomplete="off" placeholder="X-API-Key" style="flex:1;min-width:180px" aria-label="API key">
+              <button type="submit">Save</button>
+              <button type="button" class="ghost" data-action="clear-api-key">Clear</button>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>AI connection</h2></div>
+            <div id="settings-connection" class="kv"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Configuration</h2></div>
+          <p class="muted small" style="margin-bottom:10px">Read-only. Change these values in <code>.env</code> and restart Dot Lab.</p>
+          <div id="settings-config" class="kv"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2>Tools</h2></div>
+        <p class="muted small" style="margin-bottom:10px">The agent can only use tools that are available and allowed by <code>TOOL_PERMISSION_LEVEL</code> (read &lt; write &lt; external).</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tool</th><th>Permission</th><th>Timeout</th><th>Status</th></tr></thead>
+          <tbody id="settings-tools"></tbody>
+        </table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Task detail drawer -->
+<div id="drawer" hidden>
+  <div class="backdrop" data-action="close-drawer"></div>
+  <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="d-goal">
+    <div class="drawer-head">
+      <div class="titles">
+        <span id="d-status" class="status"></span>
+        <h2 id="d-goal"></h2>
+        <p id="d-meta" class="faint small" style="margin-top:6px"></p>
+      </div>
+      <button class="icon-btn" data-action="close-drawer" aria-label="Close">×</button>
+    </div>
+    <div class="actions" id="d-actions"></div>
+    <div class="drawer-body" id="d-content"></div>
+  </aside>
+</div>
+
+<!-- Modal (new task, report viewer, memory edit) -->
+<div id="modal" hidden>
+  <div class="backdrop" data-action="close-modal"></div>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head"><h2 id="modal-title"></h2><button class="icon-btn" data-action="close-modal" aria-label="Close">×</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="app.js"></script>
 </body>
 </html>
