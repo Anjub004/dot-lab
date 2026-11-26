@@ -88,3 +88,34 @@ async def test_build_llm_without_configuration() -> None:
     assert isinstance(llm, UnconfiguredLLM) and not llm.is_configured
     with pytest.raises(LLMConfigurationError, match="OPENAI_API_KEY"):
         await llm.generate(system="s", prompt="p", schema=PlannerOutput)
+
+
+# ------------------------------------------------------------ model check --
+
+
+async def test_check_model_available() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models/test-model")
+        return httpx.Response(
+            200, json={"id": "test-model", "object": "model", "created": 0, "owned_by": "x"}
+        )
+
+    llm, client = _llm(handler)
+    result = await llm.check_model()
+    await client.aclose()
+    assert result.status == "available"
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [(404, "unavailable"), (403, "unavailable"), (401, "unavailable"), (500, "error")],
+)
+async def test_check_model_problems_never_raise(code: int, expected: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(code, json={"error": {"message": "nope", "type": "x"}})
+
+    llm, client = _llm(handler)
+    result = await llm.check_model()
+    await client.aclose()
+    assert result.status == expected
+    assert "sk-test" not in result.detail  # never leaks the key

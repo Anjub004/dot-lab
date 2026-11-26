@@ -56,6 +56,11 @@ def test_status_transitions() -> None:
     assert not can_transition(TaskStatus.COMPLETED, TaskStatus.RUNNING)
     assert not can_transition(TaskStatus.CANCELLED, TaskStatus.PENDING)
     assert not can_transition(TaskStatus.PAUSED, TaskStatus.RUNNING)
+    assert can_transition(TaskStatus.RUNNING, TaskStatus.REVIEWING)
+    assert can_transition(TaskStatus.REVIEWING, TaskStatus.COMPLETED)
+    assert can_transition(TaskStatus.REVIEWING, TaskStatus.RUNNING)  # re-plan
+    assert not can_transition(TaskStatus.PENDING, TaskStatus.REVIEWING)
+    assert not can_transition(TaskStatus.PLANNING, TaskStatus.COMPLETED)
 
 
 # ----------------------------------------------------------- full runs --
@@ -93,16 +98,13 @@ async def test_task_status_completes_multi_step_goal(ctx: AppContext, llm: Scrip
     assert [c.tool for c in calls] == ["calculator", "filesystem"]
     assert all(c.status == "SUCCESS" for c in calls)
 
+    # Long-term memory keeps only the reviewer's observations and the final result.
+    # Goals, plans and raw tool output stay in the execution log (events/tool calls).
     kinds = {m.kind for m in ctx.memory.retrieve(task_id=task.id)}
-    assert {
-        MemoryKind.GOAL,
-        MemoryKind.PLAN,
-        MemoryKind.TOOL_RESULT,
-        MemoryKind.OBSERVATION,
-        MemoryKind.RESULT,
-    } <= kinds
+    assert kinds == {MemoryKind.OBSERVATION, MemoryKind.RESULT}
     events = [e.event for e in ctx.tasks.list_events(task.id)]
     assert events[0] == "TASK_CREATED" and events[-1] == "TASK_COMPLETED"
+    assert "REVIEW_STARTED" in events
 
 
 async def test_reasoning_step_and_replanning(ctx: AppContext, llm: ScriptedLLM) -> None:
@@ -129,6 +131,37 @@ async def test_reasoning_step_and_replanning(ctx: AppContext, llm: ScriptedLLM) 
     assert len(final.plan.steps) == 2 and final.plan.replans == 1
     assert final.plan.steps[1].id == "step_2"
     assert "REPLANNED" in [e.event for e in ctx.tasks.list_events(task.id)]
+
+
+async def test_unsatisfied_goal_fails_with_partial_result(
+    ctx: AppContext, llm: ScriptedLLM
+) -> None:
+    """The reviewer must never report success it did not confirm."""
+    llm.add(PlannerOutput, plan(("Compute 6*7", "calculator", False)))
+    llm.add(ToolArguments, args('{"expression": "6*7"}'))
+    llm.add(StepEvaluation, step_ok())
+    llm.add(
+        GoalEvaluation,
+        GoalEvaluation(
+            goal_satisfied=False,
+            final_result="6*7 = 42",
+            reason="the chart the user asked for was not produced",
+            additional_steps=[],
+        ),
+    )
+
+    task = ctx.tasks.create_task("Compute 6*7 and draw a chart")
+    assert await ctx.agent.run(task.id) is TaskStatus.FAILED
+
+    final = ctx.tasks.get_task(task.id)
+    assert final.plan.steps[0].status is StepStatus.COMPLETED  # the step itself worked
+    assert final.error and "Goal not achieved" in final.error
+    assert final.result and "42" in final.result and "Partial result" in final.result
+    events = [e.event for e in ctx.tasks.list_events(task.id)]
+    assert "REVIEW_STARTED" in events and events[-1] == "TASK_FAILED"
+    assert "TASK_COMPLETED" not in events
+    # A failed task's partial output is not stored as a long-term result.
+    assert MemoryKind.RESULT not in {m.kind for m in ctx.memory.retrieve(task_id=task.id)}
 
 
 async def test_tool_failure_retry_then_continue(ctx: AppContext, llm: ScriptedLLM) -> None:

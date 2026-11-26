@@ -12,7 +12,7 @@ never needs an API key or network access.
 
 from __future__ import annotations
 
-from typing import Protocol, TypeVar
+from typing import Literal, Protocol, TypeVar
 
 import httpx
 import openai
@@ -28,6 +28,16 @@ class LLMError(RuntimeError):
 
 class LLMConfigurationError(LLMError):
     """The LLM is not configured (missing key or model)."""
+
+
+class ModelCheck(BaseModel):
+    """Result of checking that the configured model is available to the API key."""
+
+    status: Literal["unchecked", "checking", "available", "unavailable", "error"]
+    detail: str
+
+
+MODEL_CHECK_TIMEOUT_SECONDS = 10.0
 
 
 class LLMClient(Protocol):
@@ -78,6 +88,29 @@ class OpenAILLM:
     @property
     def is_configured(self) -> bool:
         return True
+
+    async def check_model(self) -> ModelCheck:
+        """Verify that ``self.model`` exists and is available to this API key.
+
+        Uses a short timeout and no retries so a slow network never delays
+        startup. Never raises: problems are reported in the returned status.
+        """
+        client = self._client.with_options(timeout=MODEL_CHECK_TIMEOUT_SECONDS, max_retries=0)
+        try:
+            await client.models.retrieve(self.model)
+        except openai.AuthenticationError:
+            return ModelCheck(status="unavailable", detail="OpenAI rejected the API key.")
+        except (openai.NotFoundError, openai.PermissionDeniedError):
+            return ModelCheck(
+                status="unavailable",
+                detail=f"Model '{self.model}' is not available to this API key. "
+                "Check OPENAI_MODEL.",
+            )
+        except openai.APIError as exc:
+            return ModelCheck(
+                status="error", detail=f"Could not verify the model: {type(exc).__name__}"
+            )
+        return ModelCheck(status="available", detail=f"Model '{self.model}' is available.")
 
     async def generate(self, *, system: str, prompt: str, schema: type[SchemaT]) -> SchemaT:
         try:

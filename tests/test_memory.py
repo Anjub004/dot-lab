@@ -64,3 +64,13 @@ def test_memory_delete(store: SQLiteMemoryStore) -> None:
     assert store.delete(record.id) is True
     assert store.retrieve(memory_id=record.id) == []
     assert store.delete(record.id) is False
+
+
+def test_memory_search_treats_wildcards_literally(store: SQLiteMemoryStore) -> None:
+    """'_' is a LIKE wildcard; a search for 'sales_report' must not match 'salesXreport'."""
+    store.save(MemoryCreate(kind=MemoryKind.NOTE, content="salesXreport for March"))
+    exact = store.save(MemoryCreate(kind=MemoryKind.NOTE, content="saved sales_report.csv"))
+
+    results = store.search("sales_report")
+    assert [r.id for r in results] == [exact.id]
+    assert all((r.score or 0) > 0 for r in results)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.agent.state import TaskStatus
+from app.agent.state import ACTIVE_STATUSES, TaskStatus
 from app.api import approvals, monitors, tasks
 from app.api.deps import get_ctx, require_api_key
 from app.api.schemas import Health, Overview
@@ -22,6 +22,7 @@ def health(ctx: AppContext = Depends(get_ctx)) -> Health:
     return Health(
         status="ok",
         llm_configured=ctx.llm.is_configured,
+        model_check=ctx.model_check,
         search_provider=ctx.settings.search_provider,
         tools=[{"name": t.name, "available": t.availability().available} for t in ctx.tools.all()],
     )
@@ -30,7 +31,7 @@ def health(ctx: AppContext = Depends(get_ctx)) -> Health:
 @protected_router.get("/overview", response_model=Overview, tags=["system"])
 def overview(ctx: AppContext = Depends(get_ctx)) -> Overview:
     counts = ctx.tasks.status_counts()
-    active = sum(counts[s] for s in (TaskStatus.PENDING, TaskStatus.PLANNING, TaskStatus.RUNNING))
+    active = sum(counts[s] for s in ACTIVE_STATUSES)
     return Overview(
         active_tasks=active,
         completed_tasks=counts[TaskStatus.COMPLETED],

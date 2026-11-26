@@ -83,14 +83,11 @@ class TaskRunner:
             await asyncio.wait_for(asyncio.shield(job), timeout)
 
     def recover(self) -> int:
-        """Re-queue tasks interrupted by a restart (PENDING/PLANNING/RUNNING)."""
-        ids = self.tasks.ids_with_status(
-            {TaskStatus.PENDING, TaskStatus.PLANNING, TaskStatus.RUNNING}
-        )
+        """Re-queue tasks interrupted by a restart (PENDING/PLANNING/RUNNING/REVIEWING)."""
+        interrupted = {TaskStatus.PLANNING, TaskStatus.RUNNING, TaskStatus.REVIEWING}
+        ids = self.tasks.ids_with_status({TaskStatus.PENDING, *interrupted})
         for task_id in ids:
-            self.tasks.try_transition(
-                task_id, {TaskStatus.PLANNING, TaskStatus.RUNNING}, TaskStatus.PENDING
-            )
+            self.tasks.try_transition(task_id, interrupted, TaskStatus.PENDING)
             self.tasks.add_event(task_id, EventType.TASK_RESUMED, "Re-queued after restart")
             self.submit(task_id)
         return len(ids)

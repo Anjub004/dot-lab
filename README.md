@@ -75,12 +75,13 @@ while task is PLANNING/RUNNING:
     stop if MAX_AGENT_ITERATIONS reached
     if no plan:      create plan (LLM -> PlannerOutput, validated against tool registry)
     step = next unfinished step
-    if no step:      evaluate goal -> COMPLETE, or add steps (max MAX_REPLANS times)
+    if no step:      REVIEWING: goal satisfied -> COMPLETED; not satisfied -> add steps
+                     (max MAX_REPLANS times) or FAILED with the partial result kept
     if tool step:    generate args (validated against the tool's Pydantic input model)
                      if approval needed -> record request, WAITING_APPROVAL, exit loop
                      execute tool (timeout + retries for transient errors)
     else:            reasoning step (LLM)
-    record tool call, events, memory
+    record tool call and events (execution log)
     evaluate step -> continue | retry (bounded) | finish early | fail
 ```
 
@@ -92,7 +93,9 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 - **Structured outputs** everywhere the LLM is used (planner, tool arguments, step evaluation, goal evaluation, monitor comparison) via `client.responses.parse(text_format=...)`.
 - **Modular tools** behind a common `BaseTool` interface: calculator (safe AST evaluator), web search (pluggable providers), read-only browser (SSRF-protected), sandboxed file system, notifications (dashboard + webhook).
 - **Human-in-the-loop approvals**: webhook messages, file overwrites, steps the planner marks sensitive, and any tool listed in `APPROVAL_REQUIRED_TOOLS`. The approved input is executed exactly — it is never regenerated.
-- **Persistent memory** (`save` / `retrieve` / `search` / `delete`) in SQLite with keyword search; relevant memories from earlier tasks are given to the planner.
+- **Persistent memory** (`save` / `retrieve` / `search` / `delete`) in SQLite with keyword search; relevant memories from earlier tasks are given to the planner. Long-term memory holds only reviewer observations and final results; goals, plans and raw tool output stay in the execution log.
+- **Honest reviewer**: a task is `COMPLETED` only when the reviewer confirms the goal is satisfied; otherwise it is `FAILED` with the partial result kept.
+- **Startup model check**: `GET /api/health` reports whether `OPENAI_MODEL` is available to your API key.
 - **Background execution** with asyncio, concurrency limit, pause / resume / cancel, and recovery of interrupted tasks on restart.
 - **Monitoring mode** (experimental): scheduled goals, LLM-based change detection, notify only on meaningful change.
 - **Dashboard**: overview cards, task list, task detail (goal, plan, current step, history, tool calls, memory, approvals, final result), approval panel, monitors and notifications.
@@ -126,6 +129,7 @@ dot-lab/
 ├── dashboard/               # index.html, styles.css, app.js
 ├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py
 ├── tests/                   # offline pytest suite with a scripted fake LLM
+├── docs/                    # architecture.md (components, lifecycle, memory design)
 ├── .github/workflows/ci.yml # lint + tests on every push
 ├── data/                    # SQLite DB + agent workspace (git-ignored)
 ├── .env.example  Dockerfile  docker-compose.yml  pyproject.toml  requirements.txt
@@ -223,7 +227,7 @@ curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/resume
 curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/cancel
 ```
 
-Statuses: `PENDING`, `PLANNING`, `RUNNING`, `WAITING_APPROVAL`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED`.
+Statuses: `PENDING`, `PLANNING`, `RUNNING`, `WAITING_APPROVAL`, `REVIEWING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED`. See [docs/architecture.md](docs/architecture.md) for the full lifecycle.
 
 Or run the examples in-process (no server needed):
 
@@ -240,7 +244,7 @@ python examples/monitoring_agent.py --cycles 2 --pause 60
 3. Status `RUNNING`: each step runs; tool calls, results and observations appear in the task drawer.
 4. Before the webhook step the task becomes `WAITING_APPROVAL` and the dashboard shows **Agent is waiting for your approval** with the action, reason, the agent's explanation and the exact payload.
 5. You press **Approve** (or **Reject**). The task resumes and sends exactly what you approved (or skips that step).
-6. The evaluator checks the goal is satisfied and the task becomes `COMPLETED` with the final summary. Plan, history and memory are kept.
+6. Status `REVIEWING`: the reviewer checks the goal is satisfied and the task becomes `COMPLETED` with the final summary (or `FAILED` with the partial result if it is not). Plan and history are kept; useful observations and the final result go to memory.
 
 ## Monitoring
 
