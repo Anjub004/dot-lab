@@ -24,7 +24,10 @@ def health(ctx: AppContext = Depends(get_ctx)) -> Health:
         llm_configured=ctx.llm.is_configured,
         model_check=ctx.model_check,
         search_provider=ctx.settings.search_provider,
-        tools=[{"name": t.name, "available": t.availability().available} for t in ctx.tools.all()],
+        tools=[
+            {"name": t["name"], "available": t["available"] and t["permitted"]}
+            for t in ctx.tools.describe()
+        ],
     )
 
 
@@ -46,7 +49,7 @@ def overview(ctx: AppContext = Depends(get_ctx)) -> Overview:
 
 @protected_router.get("/tools", tags=["system"])
 def list_tools(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
-    return [t.describe() for t in ctx.tools.all()]
+    return ctx.tools.describe()
 
 
 @protected_router.get("/memory/search", response_model=list[MemoryRecord], tags=["memory"])
