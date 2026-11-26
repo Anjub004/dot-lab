@@ -46,6 +46,11 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+def escape_like(term: str) -> str:
+    """Escape LIKE wildcards so ``_`` and ``%`` match literally (use with escape="\\")."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def utcnow() -> datetime:
     """Timezone-aware current UTC time."""
     return datetime.now(UTC)
