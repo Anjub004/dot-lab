@@ -17,6 +17,7 @@ class TaskStatus(StrEnum):
     PLANNING = "PLANNING"
     RUNNING = "RUNNING"
     WAITING_APPROVAL = "WAITING_APPROVAL"
+    REVIEWING = "REVIEWING"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
@@ -28,7 +29,7 @@ TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset(
 )
 
 ACTIVE_STATUSES: frozenset[TaskStatus] = frozenset(
-    {TaskStatus.PENDING, TaskStatus.PLANNING, TaskStatus.RUNNING}
+    {TaskStatus.PENDING, TaskStatus.PLANNING, TaskStatus.RUNNING, TaskStatus.REVIEWING}
 )
 
 # Allowed status transitions. Anything not listed is rejected.
@@ -55,6 +56,7 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
         {
             TaskStatus.PLANNING,
             TaskStatus.WAITING_APPROVAL,
+            TaskStatus.REVIEWING,
             TaskStatus.PAUSED,
             TaskStatus.COMPLETED,
             TaskStatus.FAILED,
@@ -64,6 +66,18 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     ),
     TaskStatus.WAITING_APPROVAL: frozenset(
         {TaskStatus.PENDING, TaskStatus.CANCELLED, TaskStatus.FAILED}
+    ),
+    # The reviewer judges the finished plan: it can complete or fail the task,
+    # or send it back to RUNNING when it adds steps (bounded re-plan).
+    TaskStatus.REVIEWING: frozenset(
+        {
+            TaskStatus.RUNNING,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.PAUSED,
+            TaskStatus.CANCELLED,
+            TaskStatus.PENDING,
+        }
     ),
     TaskStatus.PAUSED: frozenset({TaskStatus.PENDING, TaskStatus.CANCELLED}),
     TaskStatus.COMPLETED: frozenset(),
@@ -175,6 +189,7 @@ class EventType(StrEnum):
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_GRANTED = "APPROVAL_GRANTED"
     APPROVAL_REJECTED = "APPROVAL_REJECTED"
+    REVIEW_STARTED = "REVIEW_STARTED"
     REPLANNED = "REPLANNED"
     TASK_COMPLETED = "TASK_COMPLETED"
     TASK_FAILED = "TASK_FAILED"

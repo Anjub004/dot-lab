@@ -56,6 +56,7 @@ NON_TERMINAL = {
     TaskStatus.PENDING,
     TaskStatus.PLANNING,
     TaskStatus.RUNNING,
+    TaskStatus.REVIEWING,
     TaskStatus.WAITING_APPROVAL,
     TaskStatus.PAUSED,
 }
@@ -158,19 +159,16 @@ class Agent:
     # ------------------------------------------------------------- planning --
     async def _create_plan(self, task: TaskView) -> None:
         self.tasks.add_event(task.id, EventType.PLANNING_STARTED, "Creating plan")
-        self._remember(task.id, MemoryKind.GOAL, task.goal)
         plan = await self.planner.create_plan(
             task.goal, self.tools.available(), self._memory_context(task.goal, task.id)
         )
         self.tasks.save_plan(task.id, plan)
-        steps = "\n".join(f"{s.id}: [{s.tool or 'reasoning'}] {s.description}" for s in plan.steps)
         self.tasks.add_event(
             task.id,
             EventType.PLAN_CREATED,
             f"Plan with {len(plan.steps)} steps: {plan.summary}",
             data={"steps": [s.model_dump(mode="json") for s in plan.steps]},
         )
-        self._remember(task.id, MemoryKind.PLAN, f"{plan.summary}\n{steps}")
         self.tasks.try_transition(task.id, {TaskStatus.PLANNING}, TaskStatus.RUNNING)
 
     # ------------------------------------------------------------ execution --
@@ -226,9 +224,6 @@ class Agent:
         if run.success and output is not None:
             self.tasks.add_event(
                 task.id, EventType.TOOL_CALLED, f"{tool.name} succeeded", step_id=step.id
-            )
-            self._remember(
-                task.id, MemoryKind.TOOL_RESULT, f"[{tool.name}] {output}", step_id=step.id
             )
             return True, output
         self.tasks.add_event(
@@ -353,7 +348,15 @@ class Agent:
 
     # ----------------------------------------------------------- finishing --
     async def _finalize(self, task: TaskView, plan: Plan) -> bool:
-        """Evaluate the goal. Returns True when the task reached a final state."""
+        """Review the finished plan. Returns True when the task reached a final state.
+
+        The task is only COMPLETED when the reviewer says the goal is satisfied.
+        Otherwise it is FAILED, with any partial result kept for the user, so a
+        task is never reported as successful when it was not.
+        """
+        if not self.tasks.try_transition(task.id, {TaskStatus.RUNNING}, TaskStatus.REVIEWING):
+            return True  # paused/cancelled meanwhile: stop the loop
+        self.tasks.add_event(task.id, EventType.REVIEW_STARTED, "Reviewing results")
         available = [t.name for t in self.tools.available()]
         evaluation = await self.evaluator.evaluate_goal(
             plan, self._step_context(plan, total=CONTEXT_TOTAL_CHARS * 2), available
@@ -367,6 +370,10 @@ class Agent:
             extra = evaluation.additional_steps[: self.settings.max_plan_steps]
             problems = self.planner.validate(PlannerOutput(summary="", steps=extra), set(available))
             if not problems:
+                if not self.tasks.try_transition(
+                    task.id, {TaskStatus.REVIEWING}, TaskStatus.RUNNING
+                ):
+                    return True  # paused/cancelled during the review
                 plan.replans += 1
                 added = self.planner.extend_plan(plan, extra)
                 self.tasks.save_plan(task.id, plan)
@@ -379,26 +386,44 @@ class Agent:
                 return False
 
         result = evaluation.final_result
-        any_success = any(s.status is StepStatus.COMPLETED for s in plan.steps)
         if not evaluation.goal_satisfied:
-            result += f"\n\n> Note: the agent could not fully satisfy the goal: {evaluation.reason}"
-        if not evaluation.goal_satisfied and not any_success:
-            self._fail(task.id, f"Goal not achieved: {evaluation.reason}", result=result)
+            # Never report success the reviewer did not confirm. Keep the partial
+            # result so the user can still see what was produced.
+            partial = (
+                f"{result}\n\n> Partial result: the goal was not achieved. {evaluation.reason}"
+            )
+            self._fail(
+                task.id,
+                f"Goal not achieved: {evaluation.reason}",
+                result=partial,
+                from_statuses={TaskStatus.REVIEWING},
+            )
             return True
 
         if self.tasks.try_transition(
-            task.id, {TaskStatus.RUNNING}, TaskStatus.COMPLETED, result=result, current_step_id=None
+            task.id,
+            {TaskStatus.REVIEWING},
+            TaskStatus.COMPLETED,
+            result=result,
+            current_step_id=None,
         ):
             self.tasks.add_event(task.id, EventType.TASK_COMPLETED, "Task completed")
             self._remember(task.id, MemoryKind.RESULT, f"Goal: {task.goal}\n\n{result}")
         return True
 
-    def _fail(self, task_id: str, message: str, result: str | None = None) -> None:
+    def _fail(
+        self,
+        task_id: str,
+        message: str,
+        result: str | None = None,
+        from_statuses: set[TaskStatus] | None = None,
+    ) -> None:
         safe = redact(message, self.settings.secret_values())[:2000]
         fields: dict[str, object] = {"error": safe}
         if result is not None:
             fields["result"] = result
-        if self.tasks.try_transition(task_id, NON_TERMINAL, TaskStatus.FAILED, **fields):
+        allowed = from_statuses if from_statuses is not None else NON_TERMINAL
+        if self.tasks.try_transition(task_id, allowed, TaskStatus.FAILED, **fields):
             self.approvals.cancel_for_task(task_id)
             self.tasks.add_event(task_id, EventType.TASK_FAILED, safe)
             logger.warning("task failed", extra={"task_id": task_id, "error": safe})
