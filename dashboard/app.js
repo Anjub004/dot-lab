@@ -145,7 +145,9 @@ function renderDetail(t) {
   $("d-status").className = `status ${t.status}`;
   $("d-status").textContent = t.status;
   $("d-goal").textContent = t.goal;
-  $("d-meta").textContent = `Created ${fmtTime(t.created_at)} · updated ${fmtTime(t.updated_at)} · ${t.iterations} iterations · id ${t.id}`;
+  const u = t.usage;
+  const tokens = u ? ` · ${u.total_tokens.toLocaleString()}${u.max_tokens ? ` / ${u.max_tokens.toLocaleString()}` : ""} tokens${u.estimated_cost_usd != null ? ` (~$${u.estimated_cost_usd.toFixed(4)})` : ""}` : "";
+  $("d-meta").textContent = `Created ${fmtTime(t.created_at)} · updated ${fmtTime(t.updated_at)} · ${t.iterations} iterations${tokens} · id ${t.id}`;
 
   const actions = [];
   if (["PENDING", "PLANNING", "RUNNING", "REVIEWING"].includes(t.status)) actions.push(`<button class="ghost" data-act="pause">Pause</button>`);
