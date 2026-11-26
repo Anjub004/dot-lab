@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 
 from sqlalchemy import func, or_, select
 
-from app.database.database import Database, utcnow
+from app.database.database import Database, escape_like, utcnow
 from app.database.models import MemoryRow
 from app.memory.models import (
     CategoryCount,
@@ -68,11 +68,6 @@ _STOPWORDS = frozenset(
     ]
 )
 MAX_CONTENT_CHARS = 20_000
-
-
-def _escape_like(term: str) -> str:
-    """Escape LIKE wildcards so ``_`` and ``%`` in a search term match literally."""
-    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _terms(query: str) -> list[str]:
@@ -177,9 +172,7 @@ class SQLiteMemoryStore(MemoryStore):
         if not terms:
             return []
         stmt = select(MemoryRow).where(
-            or_(
-                *[MemoryRow.content.ilike(f"%{_escape_like(term)}%", escape="\\") for term in terms]
-            )
+            or_(*[MemoryRow.content.ilike(f"%{escape_like(term)}%", escape="\\") for term in terms])
         )
         if kinds:
             stmt = stmt.where(MemoryRow.kind.in_([k.value for k in kinds]))
