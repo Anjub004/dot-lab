@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a new tool, capability or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the goal or workflow, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How could Dot Lab support it? For a new tool, say what it reads or changes.
+    validations:
+      required: true
+  - type: dropdown
+    id: permission
+    attributes:
+      label: If this is a new tool, which permission level would it need?
+      options:
+        - Not a tool
+        - read (only reads the workspace or computes)
+        - write (changes files in the workspace)
+        - external (talks to the internet or other services)
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety considerations
+      description: Could it leak data, reach the network, or change things? Should it need human approval?
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to work on this myself.

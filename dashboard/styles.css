@@ -100,6 +100,7 @@ pre {
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 .grid { display: grid; gap: 16px; }
+.grid > * { min-width: 0; }
 .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.sidebar-left { grid-template-columns: 280px minmax(0, 1fr); }
 .stack { display: flex; flex-direction: column; gap: 16px; }
@@ -147,7 +148,7 @@ button.danger { background: transparent; border-color: rgba(248, 113, 113, 0.45)
 button.danger:hover { background: var(--danger-bg); }
 button.success { background: #10b981; }
 button.small { padding: 5px 10px; font-size: 12px; }
-button.link { background: none; border: none; padding: 0; color: var(--info); font-weight: 550; }
+button.link { background: none; border: none; padding: 0; color: var(--info); font-weight: 550; white-space: normal; text-align: left; overflow-wrap: anywhere; max-width: 100%; }
 button.link:hover { text-decoration: underline; filter: none; }
 input, textarea, select {
   font: inherit; color: var(--text); background: var(--bg-2); border: 1px solid var(--border-2);
@@ -212,13 +213,13 @@ td.goal span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: 
 .loading::after { content: "…"; animation: pulse 1.2s infinite; }
 
 .timeline { list-style: none; margin: 0; padding: 0; }
-.timeline li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.timeline li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .timeline time { color: var(--faint); font-size: 12px; }
 .timeline .ev { font: 600 11px var(--mono); color: var(--info); margin-right: 8px; }
 .timeline .ev.bad { color: var(--danger); }
 .timeline .ev.warn { color: var(--warn); }
 .timeline .ev.good { color: var(--success); }
-.timeline .goal-link { display: block; font-size: 12px; color: var(--muted); }
+.timeline .goal-link { display: block; max-width: 100%; text-align: left; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); }
 
 /* ------------------------------------------------------------------ banners, toast */
 .banner { border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 14px; border: 1px solid; display: flex; gap: 12px; align-items: center; }
@@ -236,7 +237,7 @@ td.goal span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: 
 .chat-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 16px; height: calc(100vh - 120px); min-height: 480px; }
 .conv-list { display: flex; flex-direction: column; min-height: 0; }
 .conv-items { overflow-y: auto; flex: 1; margin-top: 10px; }
-.conv { display: block; width: 100%; text-align: left; background: transparent; border: 1px solid transparent; color: var(--text); padding: 10px 10px; border-radius: var(--radius-sm); font-weight: 500; }
+.conv { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; background: transparent; border: 1px solid transparent; color: var(--text); padding: 10px 10px; border-radius: var(--radius-sm); font-weight: 500; }
 .conv:hover { background: var(--panel-2); filter: none; }
 .conv.active { background: var(--info-bg); border-color: rgba(79, 124, 255, 0.4); }
 .conv small { display: block; color: var(--faint); font-weight: 400; }
@@ -308,7 +309,7 @@ code { font: 12.5px var(--mono); background: var(--panel-2); padding: 1px 6px; b
 
 /* ------------------------------------------------------------------ responsive */
 @media (max-width: 1100px) {
-  .grid.two, .grid.sidebar-left { grid-template-columns: 1fr; }
+  .grid.two, .grid.sidebar-left { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
@@ -316,7 +317,7 @@ code { font: 12.5px var(--mono); background: var(--panel-2); padding: 1px 6px; b
   .sidebar.open { transform: none; }
   .icon-btn.menu-toggle { display: grid; }
   .main { padding: 16px 14px 40px; }
-  .chat-layout { grid-template-columns: 1fr; height: auto; }
+  .chat-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
   .conv-items { max-height: 180px; }
   .chat { height: 70vh; }
   .msg { max-width: 92%; }

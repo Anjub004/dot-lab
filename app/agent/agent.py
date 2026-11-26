@@ -198,10 +198,11 @@ class Agent:
                 self._reply(task.id, plan.question)
             return
         self.tasks.save_plan(task.id, plan)
+        steps = f"{len(plan.steps)} step" + ("" if len(plan.steps) == 1 else "s")
         self.tasks.add_event(
             task.id,
             EventType.PLAN_CREATED,
-            f"Plan with {len(plan.steps)} steps: {plan.summary}",
+            f"Plan with {steps}: {plan.summary}",
             data={"steps": [s.model_dump(mode="json") for s in plan.steps]},
         )
         self.tasks.try_transition(task.id, {TaskStatus.PLANNING}, TaskStatus.RUNNING)
