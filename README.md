@@ -95,6 +95,7 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 - **Human-in-the-loop approvals**: webhook messages, file overwrites, steps the planner marks sensitive, and any tool listed in `APPROVAL_REQUIRED_TOOLS`. The approved input is executed exactly — it is never regenerated.
 - **Persistent memory** (`save` / `retrieve` / `search` / `delete`) in SQLite with keyword search; relevant memories from earlier tasks are given to the planner. Long-term memory holds only reviewer observations and final results; goals, plans and raw tool output stay in the execution log.
 - **Honest reviewer**: a task is `COMPLETED` only when the reviewer confirms the goal is satisfied; otherwise it is `FAILED` with the partial result kept.
+- **Token and cost budgets**: every LLM call's token usage is recorded per task (`llm_usage` table, shown in the task detail and dashboard). A task fails cleanly once it reaches `MAX_TASK_TOKENS` or the optional `MAX_TASK_COST_USD`.
 - **Startup model check**: `GET /api/health` reports whether `OPENAI_MODEL` is available to your API key.
 - **Background execution** with asyncio, concurrency limit, pause / resume / cancel, and recovery of interrupted tasks on restart.
 - **Monitoring mode** (experimental): scheduled goals, LLM-based change detection, notify only on meaningful change.
@@ -177,6 +178,8 @@ SEARCH_API_KEY=...
 | `BROWSER_ALLOWED_DOMAINS` | Optional comma-separated allow-list. |
 | `NOTIFICATION_WEBHOOK_URL` | Optional external webhook (always requires approval). |
 | `MAX_AGENT_ITERATIONS`, `MAX_PLAN_STEPS`, `MAX_STEP_RETRIES`, `MAX_REPLANS`, `TOOL_TIMEOUT_SECONDS`, `TASK_TIMEOUT_SECONDS`, `MAX_CONCURRENT_TASKS` | Safety limits. |
+| `MAX_TASK_TOKENS` | Token budget per task (input + output, all runs of the task). Default `200000`; `0` = no limit. |
+| `MAX_TASK_COST_USD`, `OPENAI_INPUT_COST_PER_1M`, `OPENAI_OUTPUT_COST_PER_1M` | Optional cost budget. Copy your model's prices (USD per 1M tokens) from the OpenAI pricing page; cost is an estimate, not your bill. |
 | `APPROVAL_REQUIRED_TOOLS`, `APPROVAL_REJECTION_POLICY` | Extra approval rules; `skip` or `fail` on rejection. |
 | `ENABLE_MONITOR_SCHEDULER`, `MONITOR_POLL_SECONDS`, `MONITOR_MIN_INTERVAL_MINUTES` | Monitoring mode. |
 | `DOT_LAB_API_KEY` | If set, `/api/*` (except `/api/health`) requires header `X-API-Key`. |
@@ -342,7 +345,8 @@ The dashboard is at <http://127.0.0.1:8000>. Data (SQLite DB and workspace) is s
 - SQLite with synchronous SQLAlchemy calls from async code; fine for a single local user, not for high concurrency.
 - `TASK_TIMEOUT_SECONDS` applies to each run segment; time spent waiting for approval or paused is not counted.
 - Memory search is keyword-based, not semantic.
-- No database migrations; the schema is created on start-up.
+- No database migrations; the schema is created on start-up (new tables are added automatically, new columns are not).
+- Budgets are checked before each LLM call, so a task can exceed its limit by at most one call. Monitor change-comparison calls run outside a task and are not counted.
 - No user accounts; a single shared optional API key.
 - An LLM error fails the task (after the SDK's own retries) rather than attempting recovery.
 
