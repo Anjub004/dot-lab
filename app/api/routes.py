@@ -1,15 +1,14 @@
-"""Top-level API router: health, overview, tools, memory, notifications + sub-routers."""
+"""Top-level API router: health, overview, tools, notifications + sub-routers."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.agent.state import ACTIVE_STATUSES, TaskStatus
-from app.api import approvals, monitors, tasks
+from app.api import approvals, conversations, memory, monitors, tasks
 from app.api.deps import get_ctx, require_api_key
 from app.api.schemas import Health, Overview
 from app.context import AppContext
-from app.memory.models import MemoryRecord
 from app.tools.notifications import Notification
 
 public_router = APIRouter(prefix="/api", tags=["system"])
@@ -52,23 +51,6 @@ def list_tools(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     return ctx.tools.describe()
 
 
-@protected_router.get("/memory/search", response_model=list[MemoryRecord], tags=["memory"])
-def search_memory(
-    q: str = Query(min_length=2, max_length=500),
-    limit: int = Query(default=10, ge=1, le=50),
-    ctx: AppContext = Depends(get_ctx),
-) -> list[MemoryRecord]:
-    return ctx.memory.search(q, limit=limit)
-
-
-@protected_router.delete(
-    "/memory/{memory_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["memory"]
-)
-def delete_memory(memory_id: int, ctx: AppContext = Depends(get_ctx)) -> None:
-    if not ctx.memory.delete(memory_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Memory not found")
-
-
 @protected_router.get("/notifications", response_model=list[Notification], tags=["notifications"])
 def list_notifications(
     unread_only: bool = False, ctx: AppContext = Depends(get_ctx)
@@ -86,3 +68,5 @@ def mark_read(notification_id: int, ctx: AppContext = Depends(get_ctx)) -> dict[
 protected_router.include_router(tasks.router)
 protected_router.include_router(approvals.router)
 protected_router.include_router(monitors.router)
+protected_router.include_router(memory.router)
+protected_router.include_router(conversations.router)

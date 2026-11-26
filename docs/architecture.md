@@ -78,20 +78,56 @@ enforced in `app/agent/state.py`; anything not listed there is rejected.
 If it is not, the task is FAILED and the partial output is kept in `result`
 with a "Partial result" note.
 
-## Memory vs execution log
+## Memory: three kinds of context
 
-Two separate stores, with different purposes:
+| | Execution log | Short-term context | Long-term memory |
+|---|---|---|---|
+| Tables | `tasks`, `task_events`, `tool_calls`, `approvals`, `llm_usage` | `conversations`, `conversation_messages` | `memories` |
+| Contains | Goal, plan, every event, every tool input and output | The messages of one chat thread | Reviewer observations, final results of completed tasks, user notes |
+| Scope | One task | One conversation | Every future task |
+| Purpose | Audit trail and dashboard history | Understand follow-ups ("same for June") | Planning context across tasks |
+| Written | Automatically, always | User messages + the task's reply | Only useful knowledge, or when the user adds a note |
 
-| | Execution log | Long-term memory |
-|---|---|---|
-| Tables | `tasks`, `task_events`, `tool_calls`, `approvals` | `memories` |
-| Contains | Goal, plan, every event, every tool input and output | Reviewer observations and final results of completed tasks |
-| Purpose | Audit trail and dashboard history | Context for planning future tasks |
-| Written | Automatically, always | Only for useful knowledge |
+**Short-term context.** Posting to `/api/conversations/{id}/messages` creates a
+task linked to the conversation. The planner and the final reviewer receive the
+last `CONVERSATION_CONTEXT_MESSAGES` earlier messages (default 10, at most 8,000
+characters, each message trimmed to 2,000), newest kept first. The task's
+result, failure or cancellation is posted back as the assistant's reply.
+
+**Long-term memory.** Each memory has a `kind` (what produced it: `result`,
+`observation`, `note`, ...) and a `category` (what it is about, e.g. `sales`;
+lowercase letters, digits, `_`, `-`; default `general`). Users can list, search,
+add notes, change content or category, and delete through `/api/memory`. The
+planner receives up to five memories whose words match the goal, from kinds
+`result`, `observation` and `note`.
 
 Raw tool output, goals and plans are **not** copied into long-term memory.
 Rows of kind `goal`, `plan` and `tool_result` written by earlier versions stay
 in the database untouched; the planner never searches those kinds.
+
+## Database migrations
+
+Schema changes are managed with Alembic (`app/database/migrations/`). On
+start-up, `Database.migrate()`:
+
+1. runs every migration on a new database;
+2. on a database created before migrations existed (Milestones 1-3), creates any
+   missing baseline tables, records revision `0001`, then runs newer migrations;
+3. does nothing on an up-to-date database.
+
+SQLite cannot alter tables in place, so Alembic rebuilds them (copy, drop,
+rename). **Foreign keys are switched off during migrations**: dropping a parent
+table with them on would cascade-delete rows in child tables. A test builds a
+Milestone 1 database with task events and checks they all survive; with the
+safeguard removed, that test loses every row.
+
+A second test compares the migrated schema with the SQLAlchemy models, so a
+model change without a migration fails CI. To add a migration:
+
+```bash
+alembic revision --autogenerate -m "describe the change"   # then review the file
+alembic upgrade head
+```
 
 ## Safety limits
 

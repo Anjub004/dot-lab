@@ -13,7 +13,7 @@ RUN pip install -r requirements.txt
 COPY app ./app
 COPY dashboard ./dashboard
 COPY examples ./examples
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md alembic.ini ./
 
 # Run as an unprivileged user; data/ is the only writable directory.
 RUN useradd --create-home --uid 1000 dotlab \

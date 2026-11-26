@@ -74,3 +74,72 @@ def test_memory_search_treats_wildcards_literally(store: SQLiteMemoryStore) -> N
     results = store.search("sales_report")
     assert [r.id for r in results] == [exact.id]
     assert all((r.score or 0) > 0 for r in results)
+
+
+# ------------------------------------------------------- categories & updates --
+
+
+def test_category_is_normalized_and_validated(store: SQLiteMemoryStore) -> None:
+    record = store.save(
+        MemoryCreate(kind=MemoryKind.NOTE, content="x", category="  Sales Reports ")
+    )
+    assert record.category == "sales_reports"
+    assert store.save(MemoryCreate(kind=MemoryKind.NOTE, content="y")).category == "general"
+    for bad in ["", "-starts-with-dash", "a" * 51, "slash/category", "dot.category"]:
+        with pytest.raises(ValueError):
+            MemoryCreate(kind=MemoryKind.NOTE, content="z", category=bad)
+
+
+def test_list_by_category_with_paging(store: SQLiteMemoryStore) -> None:
+    for i in range(5):
+        store.save(MemoryCreate(kind=MemoryKind.NOTE, content=f"sales {i}", category="sales"))
+    store.save(MemoryCreate(kind=MemoryKind.NOTE, content="supplier fact", category="suppliers"))
+
+    first = store.retrieve(category="sales", limit=2)
+    second = store.retrieve(category="Sales", limit=2, offset=2)  # normalized too
+    assert [r.content for r in first] == ["sales 4", "sales 3"]
+    assert [r.content for r in second] == ["sales 2", "sales 1"]
+    assert [(c.category, c.count) for c in store.categories()] == [("sales", 5), ("suppliers", 1)]
+
+
+def test_search_within_category(store: SQLiteMemoryStore) -> None:
+    store.save(MemoryCreate(kind=MemoryKind.NOTE, content="Northgate target", category="sales"))
+    store.save(MemoryCreate(kind=MemoryKind.NOTE, content="Northgate supplier", category="ops"))
+    assert [r.category for r in store.search("northgate", category="ops")] == ["ops"]
+    assert len(store.search("northgate")) == 2
+
+
+def test_memory_update(store: SQLiteMemoryStore) -> None:
+    record = store.save(MemoryCreate(kind=MemoryKind.NOTE, content="old text"))
+    assert record.updated_at is None
+
+    updated = store.update(record.id, content="new text", category="Finance")
+    assert updated is not None
+    assert (updated.content, updated.category) == ("new text", "finance")
+    assert updated.updated_at is not None and updated.created_at == record.created_at
+    assert store.retrieve(memory_id=record.id)[0].content == "new text"
+
+    only_category = store.update(record.id, category="ops")
+    assert only_category is not None and only_category.content == "new text"
+    assert store.update(999_999, content="x") is None
+    with pytest.raises(ValueError):
+        store.update(record.id, content="   ")
+
+
+def test_memory_persists_across_restarts(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    url = f"sqlite:///{tmp_path / 'restart.db'}"
+    first = Database(url)
+    first.migrate()
+    saved = SQLiteMemoryStore(first).save(
+        MemoryCreate(
+            kind=MemoryKind.NOTE, content="Fiscal year starts in April", category="finance"
+        )
+    )
+    first.dispose()  # simulate the process stopping
+
+    second = Database(url)
+    second.migrate()  # start-up runs migrations again: must be a no-op
+    again = SQLiteMemoryStore(second).retrieve(memory_id=saved.id)
+    assert again and again[0].content == "Fiscal year starts in April"
+    assert again[0].category == "finance"
+    second.dispose()

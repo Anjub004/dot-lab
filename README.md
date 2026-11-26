@@ -95,7 +95,9 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 - **Data analysis tools** (pandas, workspace CSV files only): `csv_analyzer` (profile / aggregate / top rows with safe structured filters), `data_summary` (totals, day/week/month trend with partial periods flagged, top/bottom ranking with share %), `report_generator` (saves a Markdown report to `reports/`).
 - **Tool permission levels**: every tool is `read`, `write` or `external`. `TOOL_PERMISSION_LEVEL` hides and blocks every tool above the chosen level. Tools can also set their own shorter timeout.
 - **Human-in-the-loop approvals**: webhook messages, file overwrites, steps the planner marks sensitive, and any tool listed in `APPROVAL_REQUIRED_TOOLS`. The approved input is executed exactly — it is never regenerated.
-- **Persistent memory** (`save` / `retrieve` / `search` / `delete`) in SQLite with keyword search; relevant memories from earlier tasks are given to the planner. Long-term memory holds only reviewer observations and final results; goals, plans and raw tool output stay in the execution log.
+- **Long-term memory** in SQLite with categories and keyword search: list, search, add notes, update and delete through `/api/memory`. Relevant results, reviewer observations and user notes are given to the planner. Goals, plans and raw tool output stay in the execution log instead.
+- **Conversations (short-term context)**: messages in a conversation start tasks; earlier messages are given to the planner and reviewer, so follow-ups like "now the same for June" work. Results are posted back as replies.
+- **Database migrations** with Alembic, applied automatically on start-up (existing databases are upgraded in place without losing data).
 - **Honest reviewer**: a task is `COMPLETED` only when the reviewer confirms the goal is satisfied; otherwise it is `FAILED` with the partial result kept.
 - **Token and cost budgets**: every LLM call's token usage is recorded per task (`llm_usage` table, shown in the task detail and dashboard). A task fails cleanly once it reaches `MAX_TASK_TOKENS` or the optional `MAX_TASK_COST_USD`.
 - **Startup model check**: `GET /api/health` reports whether `OPENAI_MODEL` is available to your API key.
@@ -108,7 +110,7 @@ The whole run is wrapped in `TASK_TIMEOUT_SECONDS`. All state is in SQLite, so a
 
 ## Tech stack
 
-Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 + SQLite, OpenAI Python SDK (Responses API), httpx, pandas, python-dotenv, asyncio, pytest, Ruff. Frontend: plain HTML, CSS and JavaScript (no build step).
+Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 + SQLite + Alembic, OpenAI Python SDK (Responses API), httpx, pandas, python-dotenv, asyncio, pytest, Ruff. Frontend: plain HTML, CSS and JavaScript (no build step).
 
 ## Project structure
 
@@ -119,8 +121,8 @@ dot-lab/
 │   ├── config.py            # Settings from environment / .env
 │   ├── context.py           # Wires all components together (used by API + examples)
 │   ├── logging_config.py    # JSON logs + secret redaction
-│   ├── api/                 # routes.py (system/memory/notifications), tasks.py,
-│   │                        # approvals.py, monitors.py, schemas.py, deps.py
+│   ├── api/                 # routes.py (system/notifications), tasks.py, memory.py,
+│   │                        # conversations.py, approvals.py, monitors.py, schemas.py, deps.py
 │   ├── agent/               # agent.py (loop), planner.py, executor.py,
 │   │                        # evaluator.py, state.py, llm.py
 │   ├── memory/              # memory.py (MemoryStore + SQLite impl), models.py
@@ -128,13 +130,15 @@ dot-lab/
 │   │                        # filesystem.py, notifications.py, csv_analyzer.py,
 │   │                        # data_summary.py, report_generator.py, data_common.py
 │   ├── approvals/           # manager.py
-│   ├── database/            # database.py (engine/session), models.py (tables)
-│   └── services/            # task_service.py, runner.py (background), monitoring.py
+│   ├── database/            # database.py (engine/session/migrate), models.py, migrations/
+│   └── services/            # task_service.py, runner.py (background), monitoring.py,
+│                            # usage_service.py, conversation_service.py
 ├── dashboard/               # index.html, styles.css, app.js
 ├── examples/                # research_agent.py, monitoring_agent.py, simple_task.py,
 │                            # seed_demo_data.py, data/demo_sales.csv
 ├── tests/                   # offline pytest suite with a scripted fake LLM
 ├── docs/                    # architecture.md (components, lifecycle, memory design)
+├── alembic.ini              # migrations CLI (migrations live in app/database/migrations/)
 ├── .github/workflows/ci.yml # lint + tests on every push
 ├── data/                    # SQLite DB + agent workspace (git-ignored)
 ├── .env.example  Dockerfile  docker-compose.yml  pyproject.toml  requirements.txt
@@ -184,6 +188,7 @@ SEARCH_API_KEY=...
 | `MAX_AGENT_ITERATIONS`, `MAX_PLAN_STEPS`, `MAX_STEP_RETRIES`, `MAX_REPLANS`, `TOOL_TIMEOUT_SECONDS`, `TASK_TIMEOUT_SECONDS`, `MAX_CONCURRENT_TASKS` | Safety limits. |
 | `MAX_TASK_TOKENS` | Token budget per task (input + output, all runs of the task). Default `200000`; `0` = no limit. |
 | `MAX_TASK_COST_USD`, `OPENAI_INPUT_COST_PER_1M`, `OPENAI_OUTPUT_COST_PER_1M` | Optional cost budget. Copy your model's prices (USD per 1M tokens) from the OpenAI pricing page; cost is an estimate, not your bill. |
+| `CONVERSATION_CONTEXT_MESSAGES` | Earlier conversation messages given to the planner and reviewer. Default `10`; `0` turns short-term context off. |
 | `TOOL_PERMISSION_LEVEL` | Highest tool permission the agent may use: `read` (calculator, CSV tools), `write` (+ file system, report generator) or `external` (default: + web search, browser, notifications). |
 | `CSV_MAX_BYTES` | Largest CSV the data tools will read. Default `20000000` (20 MB). |
 | `APPROVAL_REQUIRED_TOOLS`, `APPROVAL_REJECTION_POLICY` | Extra approval rules; `skip` or `fail` on rejection. |
@@ -268,6 +273,30 @@ Then create a task such as:
 A typical plan is `data_summary` (trend + branch ranking) → *write findings* (reasoning) → `report_generator`. The report appears in `data/workspace/reports/`. The demo data is synthetic (8 branches × 8 categories, January–June 2026), generated with [retail-analytics-toolkit](https://github.com/Anjub004/retail-analytics-toolkit) (MIT).
 
 To let the agent only read and analyse data (no file writes, no internet), set `TOOL_PERMISSION_LEVEL=read`.
+
+### Conversations and memory
+
+```bash
+# Start a conversation; each message becomes a task with the earlier messages as context
+curl -s -X POST http://127.0.0.1:8000/api/conversations -H "Content-Type: application/json" -d '{}'
+curl -s -X POST http://127.0.0.1:8000/api/conversations/<id>/messages \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Total revenue by branch for May in demo/demo_sales.csv"}'
+curl -s -X POST http://127.0.0.1:8000/api/conversations/<id>/messages \
+  -H "Content-Type: application/json" -d '{"content": "Now the same for June"}'
+curl -s http://127.0.0.1:8000/api/conversations/<id>     # messages, including the replies
+
+# Long-term memory
+curl -s -X POST http://127.0.0.1:8000/api/memory -H "Content-Type: application/json" \
+  -d '{"content": "Gross profit in reports excludes VAT", "category": "finance"}'
+curl -s "http://127.0.0.1:8000/api/memory?category=finance"
+curl -s http://127.0.0.1:8000/api/memory/categories
+curl -s -X PATCH http://127.0.0.1:8000/api/memory/<id> -H "Content-Type: application/json" \
+  -d '{"category": "accounting"}'
+curl -s -X DELETE http://127.0.0.1:8000/api/memory/<id>
+```
+
+Deleting a conversation removes its messages but keeps its tasks and their history.
 
 ## Monitoring
 
@@ -366,7 +395,7 @@ The dashboard is at <http://127.0.0.1:8000>. Data (SQLite DB and workspace) is s
 - SQLite with synchronous SQLAlchemy calls from async code; fine for a single local user, not for high concurrency.
 - `TASK_TIMEOUT_SECONDS` applies to each run segment; time spent waiting for approval or paused is not counted.
 - Memory search is keyword-based, not semantic.
-- No database migrations; the schema is created on start-up (new tables are added automatically, new columns are not).
+- Migrations are tested on SQLite only.
 - Budgets are checked before each LLM call, so a task can exceed its limit by at most one call. Monitor change-comparison calls run outside a task and are not counted.
 - No user accounts; a single shared optional API key.
 - An LLM error fails the task (after the SDK's own retries) rather than attempting recovery.

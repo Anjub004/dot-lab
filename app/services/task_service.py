@@ -45,6 +45,7 @@ class TaskView(BaseModel):
     result: str | None
     error: str | None
     monitor_id: str | None
+    conversation_id: str | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None
@@ -95,6 +96,7 @@ def _view(row: TaskRow) -> TaskView:
         result=row.result,
         error=row.error,
         monitor_id=row.monitor_id,
+        conversation_id=row.conversation_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
         started_at=row.started_at,
@@ -109,8 +111,15 @@ class TaskService:
         self._db = db
 
     # --- tasks ----------------------------------------------------------------
-    def create_task(self, goal: str, monitor_id: str | None = None) -> TaskView:
-        row = TaskRow(goal=goal, status=TaskStatus.PENDING.value, monitor_id=monitor_id)
+    def create_task(
+        self, goal: str, monitor_id: str | None = None, conversation_id: str | None = None
+    ) -> TaskView:
+        row = TaskRow(
+            goal=goal,
+            status=TaskStatus.PENDING.value,
+            monitor_id=monitor_id,
+            conversation_id=conversation_id,
+        )
         with self._db.session() as session:
             session.add(row)
             session.flush()
