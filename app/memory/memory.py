@@ -60,6 +60,11 @@ _STOPWORDS = frozenset(
 MAX_CONTENT_CHARS = 20_000
 
 
+def _escape_like(term: str) -> str:
+    """Escape LIKE wildcards so ``_`` and ``%`` in a search term match literally."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _terms(query: str) -> list[str]:
     words = {w.lower() for w in _WORD.findall(query)}
     return sorted(w for w in words if w not in _STOPWORDS)[:12]
@@ -145,7 +150,9 @@ class SQLiteMemoryStore(MemoryStore):
         if not terms:
             return []
         stmt = select(MemoryRow).where(
-            or_(*[MemoryRow.content.ilike(f"%{term}%") for term in terms])
+            or_(
+                *[MemoryRow.content.ilike(f"%{_escape_like(term)}%", escape="\\") for term in terms]
+            )
         )
         if kinds:
             stmt = stmt.where(MemoryRow.kind.in_([k.value for k in kinds]))
@@ -162,6 +169,8 @@ class SQLiteMemoryStore(MemoryStore):
         for row in rows:
             text = row.content.lower()
             hits = sum(1 for term in terms if term in text)
+            if hits == 0:  # defensive: never return records that match no term
+                continue
             record = _to_record(row)
             record.score = hits / len(terms)
             scored.append(record)
