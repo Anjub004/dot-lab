@@ -241,7 +241,7 @@ curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/resume
 curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/cancel
 ```
 
-Statuses: `PENDING`, `PLANNING`, `RUNNING`, `WAITING_APPROVAL`, `REVIEWING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED`. See [docs/architecture.md](docs/architecture.md) for the full lifecycle.
+Statuses: `PENDING`, `PLANNING`, `WAITING_INPUT`, `RUNNING`, `WAITING_APPROVAL`, `REVIEWING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED`. See [docs/architecture.md](docs/architecture.md) for the full lifecycle.
 
 Or run the examples in-process (no server needed):
 
@@ -314,6 +314,28 @@ Other endpoints: `GET /api/monitors`, `POST /api/monitors/{id}/run`, `POST /api/
 
 V1 limitation: the scheduler is a single asyncio loop in the API process. Run one instance per database.
 
+## Clarification questions
+
+When essential information is missing and a wrong guess would waste the task (which file? which month?), the planner asks **one** question instead of guessing. The task becomes `WAITING_INPUT`; the dashboard shows **Agent has a question for you** with an answer box.
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/tasks/<task_id>/answer \
+  -H "Content-Type: application/json" -d '{"answer": "June 2026"}'
+```
+
+In a conversation, simply send the answer as the next message. The answer is added to the goal for every module (planner, executor, reviewer). A task can ask at most two questions; after that the planner must plan with stated assumptions.
+
+## Task reports
+
+Every task can be downloaded as a Markdown report (goal, clarifications, result, plan, tool calls, approvals, token usage, timeline). Use **Download report** in the task drawer, or:
+
+```bash
+curl -s -OJ http://127.0.0.1:8000/api/tasks/<task_id>/report        # download
+curl -s "http://127.0.0.1:8000/api/tasks/<task_id>/report?download=false"   # view
+```
+
+Tool outputs in the report are shortened to 800 characters.
+
 ## Human approval
 
 An approval is requested when **any** of these is true:
@@ -356,6 +378,12 @@ ruff check . && ruff format --check .
 ```
 
 The suite runs **offline**: the LLM is replaced by a scripted fake, the OpenAI SDK wrapper is exercised against a mocked HTTP transport, and search/browser/webhook use `httpx.MockTransport`. No API key is needed.
+
+**Live tests** run the real agent against the real OpenAI API (model check, a calculator task, and a CSV analysis of the demo data). They are skipped by default and in CI. Run them with your own key (in `.env` or the environment); they make about 10-20 model calls:
+
+```bash
+pytest -m live -v
+```
 
 ## Docker
 
