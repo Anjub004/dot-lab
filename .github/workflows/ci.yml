@@ -8,14 +8,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Lint and test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -25,3 +34,25 @@ jobs:
           ruff format --check .
       - name: Test (offline, no API key needed)
         run: pytest -q
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build
+        run: docker build -t dot-lab:ci .
+      - name: Start the container (no API key)
+        run: docker run -d --name dot-lab -p 127.0.0.1:8000:8000 dot-lab:ci
+      - name: Check health, dashboard and non-root user
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/api/health && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/api/health | grep -q '"status"'
+          curl -fsS http://127.0.0.1:8000/ | grep -q "Dot Lab"
+          test "$(docker exec dot-lab id -u)" = "1000"
+      - name: Container logs
+        if: always()
+        run: docker logs dot-lab
