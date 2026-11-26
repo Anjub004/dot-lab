@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 
 from app.agent.state import (
     TERMINAL_STATUSES,
+    Clarification,
     EventType,
     Plan,
     TaskStatus,
@@ -40,6 +41,7 @@ class TaskView(BaseModel):
     goal: str
     status: TaskStatus
     plan: Plan | None
+    clarifications: list[Clarification] = []
     current_step_id: str | None
     iterations: int
     result: str | None
@@ -85,12 +87,23 @@ class ToolCall(BaseModel):
     created_at: datetime
 
 
+def _clarifications(row: TaskRow) -> list[Clarification]:
+    if not row.clarifications_json:
+        return []
+    return [Clarification.model_validate(c) for c in json.loads(row.clarifications_json)]
+
+
+def _dump(items: list[Clarification]) -> str:
+    return json.dumps([c.model_dump(mode="json") for c in items])
+
+
 def _view(row: TaskRow) -> TaskView:
     return TaskView(
         id=row.id,
         goal=row.goal,
         status=TaskStatus(row.status),
         plan=Plan.model_validate_json(row.plan_json) if row.plan_json else None,
+        clarifications=_clarifications(row),
         current_step_id=row.current_step_id,
         iterations=row.iterations,
         result=row.result,
@@ -140,13 +153,19 @@ class TaskService:
             return _view(row)
 
     def list_tasks(
-        self, status: TaskStatus | None = None, limit: int = 100, monitor_id: str | None = None
+        self,
+        status: TaskStatus | None = None,
+        limit: int = 100,
+        monitor_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> list[TaskView]:
         stmt = select(TaskRow).order_by(TaskRow.created_at.desc()).limit(limit)
         if status is not None:
             stmt = stmt.where(TaskRow.status == status.value)
         if monitor_id is not None:
             stmt = stmt.where(TaskRow.monitor_id == monitor_id)
+        if conversation_id is not None:
+            stmt = stmt.where(TaskRow.conversation_id == conversation_id)
         with self._db.session() as session:
             return [_view(r) for r in session.scalars(stmt)]
 
@@ -207,6 +226,57 @@ class TaskService:
             row.completed_at = now
         for key, value in fields.items():
             setattr(row, key, value)
+
+    # --- clarifications --------------------------------------------------------
+    def request_clarification(self, task_id: str, question: str) -> bool:
+        """Record the planner's question and move PLANNING -> WAITING_INPUT.
+
+        Returns False (and records nothing) if the task is no longer PLANNING,
+        e.g. because the user paused or cancelled it meanwhile.
+        """
+        with self._db.session() as session:
+            row = session.get(TaskRow, task_id)
+            if row is None:
+                raise TaskNotFoundError(task_id)
+            if not can_transition(TaskStatus(row.status), TaskStatus.WAITING_INPUT):
+                return False
+            items = _clarifications(row)
+            items.append(Clarification(question=question, asked_at=utcnow()))
+            row.clarifications_json = _dump(items)
+            self._apply(row, TaskStatus.WAITING_INPUT, {})
+            session.add(
+                TaskEventRow(
+                    task_id=task_id,
+                    event=EventType.CLARIFICATION_REQUESTED.value,
+                    message=question[:2000],
+                )
+            )
+            return True
+
+    def answer_clarification(self, task_id: str, answer: str) -> TaskView:
+        """Store the answer to the open question and move WAITING_INPUT -> PENDING."""
+        with self._db.session() as session:
+            row = session.get(TaskRow, task_id)
+            if row is None:
+                raise TaskNotFoundError(task_id)
+            current = TaskStatus(row.status)
+            if current is not TaskStatus.WAITING_INPUT:
+                raise InvalidTransitionError(f"Task is {current}, not WAITING_INPUT")
+            items = _clarifications(row)
+            if not items or items[-1].answer is not None:
+                raise InvalidTransitionError("Task has no open question")
+            items[-1].answer = answer
+            items[-1].answered_at = utcnow()
+            row.clarifications_json = _dump(items)
+            self._apply(row, TaskStatus.PENDING, {})
+            session.add(
+                TaskEventRow(
+                    task_id=task_id,
+                    event=EventType.CLARIFICATION_ANSWERED.value,
+                    message=answer[:2000],
+                )
+            )
+            return _view(row)
 
     # --- plan / iterations ----------------------------------------------------
     def save_plan(self, task_id: str, plan: Plan, current_step_id: str | None = None) -> None:
