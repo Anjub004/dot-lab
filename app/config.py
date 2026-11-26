@@ -92,6 +92,8 @@ class Settings(BaseModel):
     max_goal_length: int = Field(default=2000, ge=10)
     approval_required_tools: list[str] = Field(default_factory=list)
     approval_rejection_policy: Literal["skip", "fail"] = "skip"
+    # Earlier messages of a conversation given to the planner (0 = none).
+    conversation_context_messages: int = Field(default=10, ge=0, le=50)
     # Highest tool permission the agent may use: read < write < external.
     tool_permission_level: Literal["read", "write", "external"] = "external"
 
@@ -196,6 +198,7 @@ class Settings(BaseModel):
             .strip()
             .lower(),
             "csv_max_bytes": _int(env.get("CSV_MAX_BYTES"), 20_000_000),
+            "conversation_context_messages": _int(env.get("CONVERSATION_CONTEXT_MESSAGES"), 10),
             "max_task_cost_usd": _float(env.get("MAX_TASK_COST_USD")),
             "openai_input_cost_per_1m": _float(env.get("OPENAI_INPUT_COST_PER_1M")),
             "openai_output_cost_per_1m": _float(env.get("OPENAI_OUTPUT_COST_PER_1M")),

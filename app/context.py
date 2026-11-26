@@ -16,6 +16,7 @@ from app.approvals.manager import ApprovalManager
 from app.config import Settings
 from app.database.database import Database
 from app.memory.memory import MemoryStore, SQLiteMemoryStore
+from app.services.conversation_service import ConversationService
 from app.services.monitoring import MonitorScheduler, MonitorService
 from app.services.runner import TaskRunner
 from app.services.task_service import TaskService
@@ -32,6 +33,7 @@ class AppContext:
     llm: LLMClient
     tasks: TaskService
     usage: UsageService
+    conversations: ConversationService
     memory: MemoryStore
     approvals: ApprovalManager
     notifications: NotificationStore
@@ -71,7 +73,7 @@ def build_context(
     you intend to use the runner/scheduler immediately (they create asyncio tasks
     lazily, so construction itself is loop-agnostic)."""
     db = Database(settings.database_url)
-    db.create_all()
+    db.migrate()
     settings.workspace_dir.mkdir(parents=True, exist_ok=True)
 
     if llm is None:
@@ -83,6 +85,7 @@ def build_context(
         )
     tasks = TaskService(db)
     usage = UsageService(db)
+    conversations = ConversationService(db)
     memory = SQLiteMemoryStore(db)
     approvals = ApprovalManager(db, always_require=settings.approval_required_tools)
     notifications = NotificationStore(db)
@@ -94,6 +97,7 @@ def build_context(
         approvals=approvals,
         tasks=tasks,
         usage=usage,
+        conversations=conversations,
         settings=settings,
         retry_base_delay=retry_base_delay,
     )
@@ -106,6 +110,7 @@ def build_context(
         llm=llm,
         tasks=tasks,
         usage=usage,
+        conversations=conversations,
         memory=memory,
         approvals=approvals,
         notifications=notifications,
