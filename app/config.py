@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+
+from app.agent.usage import Pricing
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -35,6 +37,12 @@ def _int(value: str | None, default: int) -> int:
     if value is None or value.strip() == "":
         return default
     return int(value)
+
+
+def _float(value: str | None) -> float | None:
+    if value is None or value.strip() == "":
+        return None
+    return float(value)
 
 
 def _secret(value: str | None) -> SecretStr | None:
@@ -84,6 +92,14 @@ class Settings(BaseModel):
     approval_required_tools: list[str] = Field(default_factory=list)
     approval_rejection_policy: Literal["skip", "fail"] = "skip"
 
+    # --- Budgets (per task) -------------------------------------------------
+    # 0 = no token limit. Prices are USD per 1M tokens, copied from your OpenAI
+    # pricing page; they are only used to estimate cost.
+    max_task_tokens: int = Field(default=200_000, ge=0)
+    max_task_cost_usd: float | None = Field(default=None, gt=0)
+    openai_input_cost_per_1m: float | None = Field(default=None, ge=0)
+    openai_output_cost_per_1m: float | None = Field(default=None, ge=0)
+
     # --- Monitoring ---------------------------------------------------------
     enable_monitor_scheduler: bool = True
     monitor_poll_seconds: int = Field(default=30, ge=1)
@@ -112,6 +128,21 @@ class Settings(BaseModel):
             if not path.is_absolute():
                 return f"{prefix}{(PROJECT_ROOT / path).resolve()}"
         return value
+
+    @model_validator(mode="after")
+    def _cost_limit_needs_prices(self) -> Settings:
+        if self.max_task_cost_usd is not None and self.pricing is None:
+            raise ValueError(
+                "MAX_TASK_COST_USD needs OPENAI_INPUT_COST_PER_1M and OPENAI_OUTPUT_COST_PER_1M"
+            )
+        return self
+
+    @property
+    def pricing(self) -> Pricing | None:
+        """Token prices, or None when either price is not configured."""
+        if self.openai_input_cost_per_1m is None or self.openai_output_cost_per_1m is None:
+            return None
+        return Pricing(self.openai_input_cost_per_1m, self.openai_output_cost_per_1m)
 
     @property
     def llm_configured(self) -> bool:
@@ -157,6 +188,10 @@ class Settings(BaseModel):
             "max_concurrent_tasks": _int(env.get("MAX_CONCURRENT_TASKS"), 2),
             "max_goal_length": _int(env.get("MAX_GOAL_LENGTH"), 2000),
             "approval_required_tools": _csv(env.get("APPROVAL_REQUIRED_TOOLS")),
+            "max_task_tokens": _int(env.get("MAX_TASK_TOKENS"), 200_000),
+            "max_task_cost_usd": _float(env.get("MAX_TASK_COST_USD")),
+            "openai_input_cost_per_1m": _float(env.get("OPENAI_INPUT_COST_PER_1M")),
+            "openai_output_cost_per_1m": _float(env.get("OPENAI_OUTPUT_COST_PER_1M")),
             "approval_rejection_policy": (env.get("APPROVAL_REJECTION_POLICY") or "skip")
             .strip()
             .lower(),
