@@ -29,12 +29,21 @@ class UsageService:
                 )
             )
 
+    def grand_total(self) -> Usage:
+        """Usage of all tasks together."""
+        return self._sum(None)
+
     def totals(self, task_id: str) -> Usage:
+        return self._sum(task_id)
+
+    def _sum(self, task_id: str | None) -> Usage:
         stmt = select(
             func.count(LlmUsageRow.id),
             func.coalesce(func.sum(LlmUsageRow.input_tokens), 0),
             func.coalesce(func.sum(LlmUsageRow.output_tokens), 0),
-        ).where(LlmUsageRow.task_id == task_id)
+        )
+        if task_id is not None:
+            stmt = stmt.where(LlmUsageRow.task_id == task_id)
         with self._db.session() as session:
             calls, input_tokens, output_tokens = session.execute(stmt).one()
         return Usage(

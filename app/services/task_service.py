@@ -18,7 +18,7 @@ from app.agent.state import (
     TaskStatus,
     can_transition,
 )
-from app.database.database import Database, utcnow
+from app.database.database import Database, escape_like, utcnow
 from app.database.models import TaskEventRow, TaskRow, ToolCallRow
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,18 @@ class TaskEvent(BaseModel):
     message: str
     step_id: str | None
     data: dict[str, Any] | None
+    created_at: datetime
+
+
+class ActivityEvent(BaseModel):
+    """An event from any task, for the activity feed."""
+
+    id: int
+    task_id: str
+    task_goal: str
+    event: str
+    message: str
+    step_id: str | None
     created_at: datetime
 
 
@@ -158,10 +170,18 @@ class TaskService:
         limit: int = 100,
         monitor_id: str | None = None,
         conversation_id: str | None = None,
+        statuses: set[TaskStatus] | None = None,
+        query: str | None = None,
+        offset: int = 0,
     ) -> list[TaskView]:
-        stmt = select(TaskRow).order_by(TaskRow.created_at.desc()).limit(limit)
+        stmt = select(TaskRow).order_by(TaskRow.created_at.desc()).offset(offset).limit(limit)
         if status is not None:
             stmt = stmt.where(TaskRow.status == status.value)
+        if statuses:
+            stmt = stmt.where(TaskRow.status.in_([s.value for s in statuses]))
+        if query and query.strip():
+            pattern = escape_like(query.strip())
+            stmt = stmt.where(TaskRow.goal.ilike(f"%{pattern}%", escape="\\"))
         if monitor_id is not None:
             stmt = stmt.where(TaskRow.monitor_id == monitor_id)
         if conversation_id is not None:
@@ -336,6 +356,34 @@ class TaskService:
                     created_at=r.created_at,
                 )
                 for r in session.scalars(stmt)
+            ]
+
+    def recent_events(
+        self, limit: int = 50, before_id: int | None = None, events: set[str] | None = None
+    ) -> list[ActivityEvent]:
+        """Newest events across all tasks (``before_id`` pages further back)."""
+        stmt = (
+            select(TaskEventRow, TaskRow.goal)
+            .join(TaskRow, TaskRow.id == TaskEventRow.task_id)
+            .order_by(TaskEventRow.id.desc())
+            .limit(limit)
+        )
+        if before_id is not None:
+            stmt = stmt.where(TaskEventRow.id < before_id)
+        if events:
+            stmt = stmt.where(TaskEventRow.event.in_(events))
+        with self._db.session() as session:
+            return [
+                ActivityEvent(
+                    id=r.id,
+                    task_id=r.task_id,
+                    task_goal=goal,
+                    event=r.event,
+                    message=r.message,
+                    step_id=r.step_id,
+                    created_at=r.created_at,
+                )
+                for r, goal in session.execute(stmt)
             ]
 
     # --- tool calls -----------------------------------------------------------
