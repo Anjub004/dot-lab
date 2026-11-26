@@ -47,6 +47,7 @@ class TaskSummary(BaseModel):
     progress_done: int
     progress_total: int
     monitor_id: str | None
+    conversation_id: str | None = None
     created_at: datetime
     started_at: datetime | None
     updated_at: datetime
@@ -63,6 +64,7 @@ class TaskSummary(BaseModel):
             progress_done=done,
             progress_total=total,
             monitor_id=view.monitor_id,
+            conversation_id=view.conversation_id,
             created_at=view.created_at,
             started_at=view.started_at,
             updated_at=view.updated_at,

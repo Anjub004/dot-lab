@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.agent.state import EventType, TaskStatus
@@ -20,10 +22,9 @@ def _get(ctx: AppContext, task_id: str) -> TaskView:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found") from exc
 
 
-@router.post("", response_model=TaskCreated, status_code=status.HTTP_201_CREATED)
-async def create_task(body: TaskCreate, ctx: AppContext = Depends(get_ctx)) -> TaskCreated:
-    """Create a task from a goal and start it in the background."""
-    if len(body.goal) > ctx.settings.max_goal_length:
+def check_can_create_task(ctx: AppContext, goal: str) -> None:
+    """Shared checks for every way of starting a task (tasks API, conversations)."""
+    if len(goal) > ctx.settings.max_goal_length:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             f"Goal is longer than MAX_GOAL_LENGTH ({ctx.settings.max_goal_length})",
@@ -33,6 +34,12 @@ async def create_task(body: TaskCreate, ctx: AppContext = Depends(get_ctx)) -> T
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "OpenAI is not configured. Set OPENAI_API_KEY and OPENAI_MODEL and restart.",
         )
+
+
+@router.post("", response_model=TaskCreated, status_code=status.HTTP_201_CREATED)
+async def create_task(body: TaskCreate, ctx: AppContext = Depends(get_ctx)) -> TaskCreated:
+    """Create a task from a goal and start it in the background."""
+    check_can_create_task(ctx, body.goal)
     task = ctx.tasks.create_task(body.goal)
     ctx.runner.submit(task.id)
     return TaskCreated(
@@ -100,4 +107,9 @@ async def cancel_task(task_id: str, ctx: AppContext = Depends(get_ctx)) -> TaskS
     ctx.approvals.cancel_for_task(task_id)
     ctx.tasks.add_event(task_id, EventType.TASK_CANCELLED, "Cancelled by user")
     await ctx.runner.cancel(task_id)
+    if task.conversation_id:
+        with contextlib.suppress(LookupError):  # conversation may have been deleted
+            ctx.conversations.add_message(
+                task.conversation_id, "assistant", "The task was cancelled.", task_id=task_id
+            )
     return TaskSummary.from_view(task)
