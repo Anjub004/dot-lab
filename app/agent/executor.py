@@ -113,16 +113,17 @@ class StepExecutor:
     async def run_tool(self, tool: BaseTool, args: BaseModel, context: ToolContext) -> ToolRun:
         """Execute a tool with a timeout and bounded retries for transient errors."""
         dumped = args.model_dump(mode="json")
+        timeout = self.timeout_for(tool)
         started = time.monotonic()
         attempt = 0
         error: str | None = None
         while attempt <= self.max_tool_retries:
             attempt += 1
             try:
-                result = await asyncio.wait_for(tool.execute(args, context), self.tool_timeout)
+                result = await asyncio.wait_for(tool.execute(args, context), timeout)
                 return ToolRun(True, dumped, result, None, attempt, _ms(started))
             except TimeoutError:
-                error = f"Tool '{tool.name}' timed out after {self.tool_timeout:.0f}s"
+                error = f"Tool '{tool.name}' timed out after {timeout:g}s"
                 retryable = True
             except ToolError as exc:
                 error = str(exc)
@@ -135,6 +136,12 @@ class StepExecutor:
                 break
             await asyncio.sleep(self.retry_base_delay * 2 ** (attempt - 1))
         return ToolRun(False, dumped, None, error, attempt, _ms(started))
+
+    def timeout_for(self, tool: BaseTool) -> float:
+        """A tool's own limit, never longer than the global TOOL_TIMEOUT_SECONDS."""
+        if tool.timeout_seconds is None:
+            return float(self.tool_timeout)
+        return float(min(tool.timeout_seconds, self.tool_timeout))
 
     async def reason(self, goal: str, step: PlanStep, context: str) -> str:
         """Run a reasoning/writing step with the LLM."""
